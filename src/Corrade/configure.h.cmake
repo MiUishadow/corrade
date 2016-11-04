@@ -1,3 +1,5 @@
+#ifndef Corrade_configure_h
+#define Corrade_configure_h
 /*
     This file is part of Corrade.
 
@@ -32,6 +34,7 @@
 
 #cmakedefine CORRADE_TARGET_APPLE
 #cmakedefine CORRADE_TARGET_IOS
+#cmakedefine CORRADE_TARGET_IOS_SIMULATOR
 #cmakedefine CORRADE_TARGET_UNIX
 #cmakedefine CORRADE_TARGET_WINDOWS
 #cmakedefine CORRADE_TARGET_WINDOWS_RT
@@ -43,3 +46,5 @@
 
 #cmakedefine CORRADE_TESTSUITE_TARGET_XCTEST
 #cmakedefine CORRADE_UTILITY_USE_ANSI_COLORS
+
+#endif

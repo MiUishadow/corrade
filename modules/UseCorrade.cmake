@@ -34,19 +34,9 @@ endif()
 # Check compiler version
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Don't allow to use compilers older than what compatibility mode allows
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.4.0")
-        message(FATAL_ERROR "Corrade cannot be used with GCC < 4.4")
-    endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.5.0" AND NOT CORRADE_GCC44_COMPATIBILITY)
-        message(FATAL_ERROR "To use Corrade with GCC 4.4, build it with GCC44_COMPATIBILITY enabled")
-    endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.6.0" AND NOT CORRADE_GCC45_COMPATIBILITY)
-        message(FATAL_ERROR "To use Corrade with GCC 4.5, build it with GCC45_COMPATIBILITY enabled")
-    endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0" AND NOT CORRADE_GCC46_COMPATIBILITY)
-        message(FATAL_ERROR "To use Corrade with GCC 4.6, build it with GCC46_COMPATIBILITY enabled")
-    endif()
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.1" AND NOT CORRADE_GCC47_COMPATIBILITY)
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0")
+        message(FATAL_ERROR "Corrade cannot be used with GCC < 4.7. Sorry.")
+    elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.1" AND NOT CORRADE_GCC47_COMPATIBILITY)
         message(FATAL_ERROR "To use Corrade with GCC 4.7, build it with GCC47_COMPATIBILITY enabled")
     endif()
 
@@ -54,21 +44,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.1" AND CORRADE_GCC47_COMPATIBILITY)
         message(FATAL_ERROR "GCC >=4.8.1 cannot be used if Corrade is built with GCC47_COMPATIBILITY")
     endif()
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0" AND CORRADE_GCC46_COMPATIBILITY)
-        message(FATAL_ERROR "GCC >=4.7 cannot be used if Corrade is built with GCC46_COMPATIBILITY")
-    endif()
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.6.0" AND CORRADE_GCC45_COMPATIBILITY)
-        message(FATAL_ERROR "GCC >=4.6 cannot be used if Corrade is built with GCC45_COMPATIBILITY")
-    endif()
-    if(NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.5.0" AND CORRADE_GCC44_COMPATIBILITY)
-        message(FATAL_ERROR "GCC >=4.5 cannot be used if Corrade is built with GCC44_COMPATIBILITY")
-    endif()
 elseif(MSVC)
     # Don't allow to use compilers older than what compatibility mode allows
-    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
-        message(FATAL_ERROR "Corrade cannot be used with MSVC < 2013")
-    elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.0" AND NOT CORRADE_MSVC2013_COMPATIBILITY)
-        message(FATAL_ERROR "To use Corrade with MSVC 2013, build it with MSVC2013_COMPATIBILITY enabled")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.0")
+        message(FATAL_ERROR "Corrade cannot be used with MSVC < 2015. Sorry.")
     elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0" AND NOT CORRADE_MSVC2015_COMPATIBILITY)
         message(FATAL_ERROR "To use Corrade with MSVC 2015, build it with MSVC2015_COMPATIBILITY enabled")
     endif()
@@ -88,19 +67,20 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "(Apple
     # Some flags are not yet supported everywhere
     # TODO: do this with check_c_compiler_flags()
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        if(NOT "${CMAKE_CXX_COMPILER_VERSION}" VERSION_LESS "4.7.0")
-            list(APPEND CORRADE_PEDANTIC_COMPILER_OPTIONS "$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:-Wzero-as-null-pointer-constant>")
-        endif()
-        if(NOT "${CMAKE_CXX_COMPILER_VERSION}" VERSION_LESS "4.6.0")
-            list(APPEND CORRADE_PEDANTIC_COMPILER_OPTIONS "-Wdouble-promotion")
-        endif()
+        list(APPEND CORRADE_PEDANTIC_COMPILER_OPTIONS
+            "$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:-Wzero-as-null-pointer-constant>"
+
+            # TODO: enable when this gets to Clang (not in 3.9, but in master
+            # since https://github.com/llvm-mirror/clang/commit/0a022661c797356e9c28e4999b6ec3881361371e)
+            "-Wdouble-promotion")
     endif()
 
-    # Disable `-pedantic` for GCC 4.4.3 on NaCl to avoid excessive warnings
-    # about "comma at the end of enumeration list". My own GCC 4.4.7 doesn't
-    # emit these warnings.
-    if(CORRADE_GCC44_COMPATIBILITY AND CORRADE_TARGET_NACL)
-        list(REMOVE_ITEM CORRADE_PEDANTIC_COMPILER_OPTIONS "-pedantic")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "(Apple)?Clang" OR CORRADE_TARGET_EMSCRIPTEN)
+        list(APPEND CORRADE_PEDANTIC_COMPILER_OPTIONS
+            # Clang's -Wmissing-declarations does something else and the
+            # behavior we want is under -Wmissing-prototypes. See
+            # https://llvm.org/bugs/show_bug.cgi?id=16286.
+            "-Wmissing-prototypes")
     endif()
 
 # MSVC-specific compiler flags
@@ -245,6 +225,11 @@ if(CORRADE_TESTSUITE_TARGET_XCTEST)
     endif()
 endif()
 
+if(CORRADE_TARGET_EMSCRIPTEN)
+    # For bundling files to the tests
+    include(UseEmscripten)
+endif()
+
 if(CORRADE_TARGET_IOS AND NOT CORRADE_TESTSUITE_TARGET_XCTEST)
     set(CORRADE_TESTSUITE_BUNDLE_IDENTIFIER_PREFIX ${PROJECT_NAME} CACHE STRING
         "Bundle identifier prefix for tests ran on iOS device")
@@ -253,13 +238,19 @@ endif()
 function(corrade_add_test test_name)
     # Get DLL and path lists
     foreach(arg ${ARGN})
-        if(${arg} STREQUAL LIBRARIES)
-            set(__DOING_LIBRARIES ON)
+        if(arg STREQUAL LIBRARIES)
+            set(_DOING_LIBRARIES ON)
+        elseif(arg STREQUAL FILES)
+            set(_DOING_LIBRARIES OFF)
+            set(_DOING_FILES ON)
         else()
-            if(__DOING_LIBRARIES)
-                set(libraries ${libraries} ${arg})
+            if(_DOING_LIBRARIES)
+                list(APPEND libraries ${arg})
+            elseif(_DOING_FILES)
+                list(APPEND files ${arg})
+                list(APPEND absolute_files ${CMAKE_CURRENT_SOURCE_DIR}/${arg})
             else()
-                set(sources ${sources} ${arg})
+                list(APPEND sources ${arg})
             endif()
         endif()
     endforeach()
@@ -267,7 +258,7 @@ function(corrade_add_test test_name)
     if(CORRADE_TESTSUITE_TARGET_XCTEST)
         add_library(${test_name} SHARED ${sources})
         set_target_properties(${test_name} PROPERTIES FRAMEWORK TRUE)
-        target_link_libraries(${test_name} ${libraries} Corrade::TestSuite)
+        target_link_libraries(${test_name} PRIVATE ${libraries} Corrade::TestSuite)
 
         set(test_runner_file ${CMAKE_CURRENT_BINARY_DIR}/${test_name}.mm)
         configure_file(${CORRADE_TESTSUITE_XCTEST_RUNNER}
@@ -283,16 +274,35 @@ function(corrade_add_test test_name)
         endif()
     else()
         add_executable(${test_name} ${sources})
-        target_link_libraries(${test_name} ${libraries} Corrade::TestSuite)
+        target_link_libraries(${test_name} PRIVATE ${libraries} Corrade::TestSuite)
+
+        # Run tests using Node.js on Emscripten
         if(CORRADE_TARGET_EMSCRIPTEN)
             # Emscripten needs to have exceptions enabled for TestSuite to work
             # properly
-            set_target_properties(${test_name} PROPERTIES LINK_FLAGS "-s DISABLE_EXCEPTION_CATCHING=0")
+            set_property(TARGET ${test_name} APPEND_STRING PROPERTY LINK_FLAGS "-s DISABLE_EXCEPTION_CATCHING=0")
             find_package(NodeJs REQUIRED)
             add_test(NAME ${test_name} COMMAND NodeJs::NodeJs --stack-trace-limit=0 $<TARGET_FILE:${test_name}>)
+
+            # Embed all files
+            foreach(file ${files})
+                emscripten_embed_file(${test_name} ${file} "/${file}")
+            endforeach()
+
+        # Run tests using ADB on Android
+        elseif(CORRADE_TARGET_ANDROID)
+            # The executables need to be PIE
+            target_compile_options(${test_name} PRIVATE "-fPIE")
+            set_property(TARGET ${test_name} APPEND_STRING PROPERTY LINK_FLAGS "-fPIE -pie")
+            # All files will be copied to the target when the test is run
+            add_test(NAME ${test_name} COMMAND ${CORRADE_TESTSUITE_ADB_RUNNER} ${CMAKE_CURRENT_SOURCE_DIR} $<TARGET_FILE_DIR:${test_name}> $<TARGET_FILE_NAME:${test_name}> ${files})
+
+        # Run tests natively elsewhere
         else()
             add_test(${test_name} ${test_name})
         endif()
+
+        # iOS-specific
         if(CORRADE_TARGET_IOS)
             set_target_properties(${test_name} PROPERTIES
                 MACOSX_BUNDLE ON
@@ -300,6 +310,9 @@ function(corrade_add_test test_name)
                 XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED "YES")
         endif()
     endif()
+
+    # Add the file to list of required files for given test case
+    set_tests_properties(${test_name} PROPERTIES REQUIRED_FILES "${absolute_files}")
 endfunction()
 
 function(corrade_add_resource name configurationFile)
@@ -341,7 +354,40 @@ function(corrade_add_resource name configurationFile)
     set(${name} "${out}" PARENT_SCOPE)
 endfunction()
 
-function(corrade_add_plugin plugin_name debug_install_dir release_install_dir metadata_file)
+function(corrade_add_plugin plugin_name debug_install_dirs release_install_dirs metadata_file)
+    if(CORRADE_TARGET_NACL_NEWLIB OR CORRADE_TARGET_EMSCRIPTEN OR CORRADE_TARGET_WINDOWS_RT OR CORRADE_TARGET_IOS)
+        message(SEND_ERROR "corrade_add_plugin(): dynamic plugins are not available on this platform, use corrade_add_static_plugin() instead")
+    endif()
+
+    # Populate {debug,release}_{binary,library,conf}_install_dir variables
+    if(NOT debug_install_dirs STREQUAL CMAKE_CURRENT_BINARY_DIR)
+        list(LENGTH debug_install_dirs debug_install_dir_count)
+        list(LENGTH release_install_dirs release_install_dir_count)
+        if(NOT debug_install_dir_count EQUAL release_install_dir_count)
+            message(FATAL_ERROR "corrade_add_plugin(): either none or both install dirs must contain binary location")
+        elseif(debug_install_dir_count EQUAL 1)
+            set(debug_binary_install_dir ${debug_install_dirs})
+            set(debug_library_install_dir ${debug_install_dirs})
+            set(release_binary_install_dir ${release_install_dirs})
+            set(release_library_install_dir ${release_install_dirs})
+        elseif(debug_install_dir_count EQUAL 2)
+            list(GET debug_install_dirs 0 debug_binary_install_dir)
+            list(GET debug_install_dirs 1 debug_library_install_dir)
+            list(GET release_install_dirs 0 release_binary_install_dir)
+            list(GET release_install_dirs 1 release_library_install_dir)
+        else()
+            message(FATAL_ERROR "corrade_add_plugin(): install dirs must contain either just library location or both binary and library location")
+        endif()
+
+        if(CORRADE_TARGET_WINDOWS)
+            set(debug_conf_install_dir ${debug_binary_install_dir})
+            set(release_conf_install_dir ${release_binary_install_dir})
+        else()
+            set(debug_conf_install_dir ${debug_library_install_dir})
+            set(release_conf_install_dir ${release_library_install_dir})
+        endif()
+    endif()
+
     # Create dynamic library and bring all needed options along
     if(CORRADE_TARGET_WINDOWS)
         add_library(${plugin_name} SHARED ${ARGN})
@@ -363,7 +409,7 @@ function(corrade_add_plugin plugin_name debug_install_dir release_install_dir me
 
     # Copy metadata next to the binary for testing purposes or install it both
     # somewhere
-    if(${debug_install_dir} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
+    if(debug_install_dirs STREQUAL CMAKE_CURRENT_BINARY_DIR)
         add_custom_command(
             OUTPUT ${plugin_name}.conf
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${metadata_file} ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/${plugin_name}.conf
@@ -376,20 +422,39 @@ function(corrade_add_plugin plugin_name debug_install_dir release_install_dir me
         # Force IDEs display also the metadata file in project view
         add_custom_target(${plugin_name}-metadata SOURCES ${metadata_file})
 
-        install(TARGETS ${plugin_name} DESTINATION "${debug_install_dir}"
-            CONFIGURATIONS Debug)
-        install(TARGETS ${plugin_name} DESTINATION "${release_install_dir}"
-            CONFIGURATIONS "" None Release RelWithDebInfo MinSizeRel)
-        install(FILES ${metadata_file} DESTINATION "${debug_install_dir}"
+        # CONFIGURATIONS must be first in order to not be ignored when having
+        # multiple destinations.
+        # https://gitlab.kitware.com/cmake/cmake/issues/16361
+        install(TARGETS ${plugin_name}
+            CONFIGURATIONS Debug
+            RUNTIME DESTINATION ${debug_binary_install_dir}
+            LIBRARY DESTINATION ${debug_library_install_dir}
+            ARCHIVE DESTINATION ${debug_library_install_dir})
+        install(TARGETS ${plugin_name}
+            CONFIGURATIONS "" None Release RelWithDebInfo MinSizeRel
+            RUNTIME DESTINATION ${release_binary_install_dir}
+            LIBRARY DESTINATION ${release_library_install_dir}
+            ARCHIVE DESTINATION ${release_library_install_dir})
+        install(FILES ${metadata_file} DESTINATION ${debug_conf_install_dir}
             RENAME "${plugin_name}.conf"
             CONFIGURATIONS Debug)
-        install(FILES ${metadata_file} DESTINATION "${release_install_dir}"
+        install(FILES ${metadata_file} DESTINATION ${release_conf_install_dir}
             RENAME "${plugin_name}.conf"
             CONFIGURATIONS "" None Release RelWithDebInfo MinSizeRel)
     endif()
 endfunction()
 
-function(corrade_add_static_plugin plugin_name install_dir metadata_file)
+function(corrade_add_static_plugin plugin_name install_dirs metadata_file)
+    # Populate library_install_dir variable
+    list(LENGTH install_dirs install_dir_count)
+    if(install_dir_count EQUAL 1)
+        set(library_install_dir ${install_dirs})
+    elseif(install_dir_count EQUAL 2)
+        list(GET install_dirs 1 library_install_dir)
+    else()
+        message(FATAL_ERROR "corrade_add_static_plugin(): install dir must contain either just library location or both library and binary location")
+    endif()
+
     # Compile resources
     set(resource_file "${CMAKE_CURRENT_BINARY_DIR}/resources_${plugin_name}.conf")
     file(WRITE "${resource_file}" "group=CorradeStaticPlugin_${plugin_name}\n[file]\nfilename=\"${CMAKE_CURRENT_SOURCE_DIR}/${metadata_file}\"\nalias=${plugin_name}.conf")
@@ -404,8 +469,8 @@ function(corrade_add_static_plugin plugin_name install_dir metadata_file)
     set_target_properties(${plugin_name} PROPERTIES DEBUG_POSTFIX "-d")
 
     # Install, if not into the same place
-    if(NOT ${install_dir} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
-        install(TARGETS ${plugin_name} DESTINATION "${install_dir}")
+    if(NOT install_dirs STREQUAL CMAKE_CURRENT_BINARY_DIR)
+        install(TARGETS ${plugin_name} DESTINATION ${library_install_dir})
     endif()
 endfunction()
 

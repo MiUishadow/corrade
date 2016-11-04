@@ -1,3 +1,5 @@
+#ifndef Corrade_Utility_System_h
+#define Corrade_Utility_System_h
 /*
     This file is part of Corrade.
 
@@ -23,18 +25,19 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#include "Dog.h"
+/** @file
+ * @brief Namespace @ref Corrade::Utility::System
+ */
 
-namespace Corrade { namespace PluginManager { namespace Test {
+#include <cstddef>
 
-class Chihuahua: public Dog {
-    public:
-        explicit Chihuahua(AbstractManager& manager, std::string plugin): Dog(manager, std::move(plugin)) {}
+#include "Corrade/Utility/visibility.h"
 
-        std::string name() override { return "Rodriguez"; }
-};
+namespace Corrade { namespace Utility { namespace System {
+
+/** @brief Sleep for given time */
+CORRADE_UTILITY_EXPORT void sleep(std::size_t ms);
 
 }}}
 
-CORRADE_PLUGIN_REGISTER(Chihuahua, Corrade::PluginManager::Test::Chihuahua,
-                "cz.mosra.Corrade.PluginManager.Test.AbstractAnimal/1.0")
+#endif

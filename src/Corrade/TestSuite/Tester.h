@@ -507,6 +507,15 @@ class CORRADE_TESTSUITE_EXPORT Tester {
         std::size_t testCaseInstanceId() const { return _testCaseInstanceId; }
 
         /**
+         * @brief Test case repeat ID
+         *
+         * Returns repeat ID of the repeated test case that is currently
+         * executing, starting from `0`. Value is undefined if called outside
+         * of *repeated* test cases and setup/teardown functions.
+         */
+        std::size_t testCaseRepeatId() const { return _testCaseRepeatId; }
+
+        /**
          * @brief Set custom test case name
          *
          * By default the test case name is gathered in the check macros and is
@@ -666,6 +675,7 @@ class CORRADE_TESTSUITE_EXPORT Tester {
         std::chrono::time_point<std::chrono::high_resolution_clock> _wallClockBenchmarkBegin;
         std::uint64_t _benchmarkResult;
         TestCase* _testCase = nullptr;
+        bool _expectedFailuresDisabled;
         ExpectedFailure* _expectedFailure;
         TesterConfiguration _configuration;
 };
@@ -705,8 +715,16 @@ class CORRADE_TESTSUITE_EXPORT Tester {
 #endif
 
 #ifndef DOXYGEN_GENERATING_OUTPUT
+#ifndef CORRADE_TARGET_ANDROID
 #define _CORRADE_REGISTER_TEST_CASE()                                       \
     Tester::registerTestCase(__func__, __LINE__);
+#else
+/* C++11 standard __func__ on Android behaves like GCC's __PRETTY_FUNCTION__,
+   while GCC's __FUNCTION__ does the right thing.. I wonder -- do they have
+   *any* tests for libc at all?! */
+#define _CORRADE_REGISTER_TEST_CASE()                                       \
+    Tester::registerTestCase(__FUNCTION__, __LINE__);
+#endif
 #endif
 
 /** @hideinitializer
@@ -877,8 +895,8 @@ if(!bigEndian) {
 @param batchSize Number of iterations
 
 Benchmarks the following block or expression. Use in conjunction with
-@ref Corrade::TestSuite::Tester::addBenchmarks() "addBenchmarks()". Only one
-such loop can be in a function to achieve proper result.
+@ref Corrade::TestSuite::Tester::addBenchmarks() "addBenchmarks()" and others.
+Only one such loop can be in a function to achieve proper result.
 @code
 void benchmark() {
     std::string a = "hello", b = "world";

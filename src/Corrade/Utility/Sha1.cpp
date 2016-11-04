@@ -31,36 +31,49 @@
 
 namespace Corrade { namespace Utility {
 
-const unsigned int Sha1::initialDigest[5] = { 0x67452301,
-                                              0xEFCDAB89,
-                                              0x98BADCFE,
-                                              0x10325476,
-                                              0xC3D2E1F0 };
+namespace {
 
-const unsigned int Sha1::constants[4] = { 0x5A827999,
-                                          0x6ED9EBA1,
-                                          0x8F1BBCDC,
-                                          0xCA62C1D6 };
+constexpr const unsigned int InitialDigest[5] = { 0x67452301,
+                                                  0xEFCDAB89,
+                                                  0x98BADCFE,
+                                                  0x10325476,
+                                                  0xC3D2E1F0 };
+
+constexpr const unsigned int Constants[4] = { 0x5A827999,
+                                              0x6ED9EBA1,
+                                              0x8F1BBCDC,
+                                              0xCA62C1D6 };
+
+unsigned int leftrotate(unsigned int data, unsigned int shift) {
+    return data << shift | data >> (32 - shift);
+}
+
+}
+
+Sha1::Sha1(): _dataSize(0), _digest{InitialDigest[0], InitialDigest[1], InitialDigest[2], InitialDigest[3], InitialDigest[4]} {}
 
 Sha1& Sha1::operator<<(const std::string& data) {
+    const std::size_t dataOffset = _buffer.empty() ? 0 : 64 - _buffer.size();
+
     /* Process leftovers */
     if(!_buffer.empty()) {
-        /* Not enough large, try it next time */
-        if(data.size()+ _buffer.size() < 64) {
+        /* Not large enough, try it next time */
+        if(data.size() + _buffer.size() < 64) {
             _buffer.append(data);
+            _dataSize += data.size();
             return *this;
         }
 
-        _buffer.append(data.substr(0, 64- _buffer.size()));
+        /* Append few last bytes to have the buffer at 64 bytes */
+        _buffer.append(data.substr(0, dataOffset));
         processChunk(_buffer.data());
     }
 
-    for(std::size_t i = _buffer.size(); i != data.size()/64; ++i)
-        processChunk(data.data()+i*64);
+    for(std::size_t i = dataOffset; i + 64 <= data.size(); i += 64)
+        processChunk(data.data() + i);
 
     /* Save last unfinished 512-bit chunk of data */
-    if(data.size()%64 != 0) _buffer = data.substr((data.size()/64)*64);
-    else _buffer = {};
+    _buffer = data.substr(dataOffset + ((data.size() - dataOffset)/64)*64);
 
     _dataSize += data.size();
     return *this;
@@ -69,7 +82,7 @@ Sha1& Sha1::operator<<(const std::string& data) {
 Sha1::Digest Sha1::digest() {
     /* Add '1' bit to the leftovers, pad to (n*64)+56 bytes */
     _buffer.append(1, '\x80');
-    _buffer.append((_buffer.size() > 56 ? 120 : 56)- _buffer.size(), 0);
+    _buffer.append((_buffer.size() > 56 ? 120 : 56) - _buffer.size(), 0);
 
     /* Add size of data in bits in big endian */
     unsigned long long dataSizeBigEndian = Endianness::bigEndian<unsigned long long>(_dataSize*8);
@@ -86,7 +99,7 @@ Sha1::Digest Sha1::digest() {
     Digest d = Digest::fromByteArray(reinterpret_cast<const char*>(digest));
 
     /* Clear data and return */
-    std::copy(initialDigest, initialDigest+5, _digest);
+    std::copy(InitialDigest, InitialDigest+5, _digest);
     _buffer.clear();
     _dataSize = 0;
     return d;
@@ -95,8 +108,14 @@ Sha1::Digest Sha1::digest() {
 void Sha1::processChunk(const char* data) {
     /* Extend the data to 80 bytes, make it big endian */
     unsigned int extended[80];
+    /* Some memory juggling to avoid unaligned reads on platforms that don't
+       like it (Emscripten) */
     for(int i = 0; i != 16; ++i)
-        extended[i] = Endianness::bigEndian<unsigned int>(*reinterpret_cast<const unsigned int*>(data+i*4));
+        extended[i] = Endianness::bigEndian<unsigned int>(
+            (static_cast<unsigned int>(static_cast<unsigned char>(data[i*4 + 3])) << 24) |
+            (static_cast<unsigned int>(static_cast<unsigned char>(data[i*4 + 2])) << 16) |
+            (static_cast<unsigned int>(static_cast<unsigned char>(data[i*4 + 1])) <<  8) |
+            (static_cast<unsigned int>(static_cast<unsigned char>(data[i*4 + 0])) <<  0));
     for(int i = 16; i != 80; ++i)
         extended[i] = leftrotate((extended[i-3] ^ extended[i-8] ^ extended[i-14] ^ extended[i-16]), 1);
 
@@ -109,16 +128,16 @@ void Sha1::processChunk(const char* data) {
     for(int i = 0; i != 80; ++i) {
         if(i < 20) {
             f = d[3] ^ (d[1] & (d[2] ^ d[3]));
-            constant = constants[0];
+            constant = Constants[0];
         } else if(i < 40) {
             f = d[1] ^ d[2] ^ d[3];
-            constant = constants[1];
+            constant = Constants[1];
         } else if(i < 60) {
             f = (d[1] & d[2]) | (d[3] & (d[1] | d[2]));
-            constant = constants[2];
+            constant = Constants[2];
         } else {
             f = d[1] ^ d[2] ^ d[3];
-            constant = constants[3];
+            constant = Constants[3];
         }
 
         temp =

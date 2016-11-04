@@ -31,14 +31,25 @@
 #include <algorithm>
 #include <fstream>
 
-/* Unix */
+/* Unix memory mapping */
 #ifdef CORRADE_TARGET_UNIX
+#include <fcntl.h>
+#include <sys/mman.h>
+#endif
+
+/* Unix, Emscripten directory access */
+#if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
 #include <sys/stat.h>
 #include <dirent.h>
+#include <unistd.h>
+#ifdef CORRADE_TARGET_APPLE
+#include <mach-o/dyld.h>
+#endif
+#endif
 
 /* Windows */
 /** @todo remove the superfluous includes when mingw is fixed (otherwise causes undefined EXTERN_C error) */
-#elif defined(CORRADE_TARGET_WINDOWS)
+#ifdef CORRADE_TARGET_WINDOWS
 #ifdef __MINGW32__
 #include <wtypes.h>
 #include <windef.h>
@@ -54,6 +65,20 @@
 #include "Corrade/Utility/String.h"
 
 namespace Corrade { namespace Utility {
+
+std::string Directory::fromNativeSeparators(std::string path) {
+    #ifdef CORRADE_TARGET_WINDOWS
+    std::replace(path.begin(), path.end(), '\\', '/');
+    #endif
+    return path;
+}
+
+std::string Directory::toNativeSeparators(std::string path) {
+    #ifdef CORRADE_TARGET_WINDOWS
+    std::replace(path.begin(), path.end(), '/', '\\');
+    #endif
+    return path;
+}
 
 std::string Directory::path(const std::string& filename) {
     /* If filename is already a path, return it */
@@ -108,16 +133,19 @@ bool Directory::mkpath(const std::string& path) {
     if(path.back() == '/')
         return mkpath(path.substr(0, path.size()-1));
 
+    /* If the directory exists, done */
+    if(fileExists(path)) return true;
+
     /* If parent directory doesn't exist, create it */
     const std::string parentPath = Directory::path(path);
     if(!parentPath.empty() && !fileExists(parentPath) && !mkpath(parentPath)) return false;
 
     /* Create directory, return true if successfully created or already exists */
 
-    /* Unix */
-    #ifdef CORRADE_TARGET_UNIX
+    /* Unix, Emscripten */
+    #if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
     const int ret = mkdir(path.data(), 0777);
-    return ret == 0 || ret == -1;
+    return ret == 0;
 
     /* Windows (not Store/Phone) */
     #elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
@@ -125,6 +153,7 @@ bool Directory::mkpath(const std::string& path) {
 
     /* Not implemented elsewhere */
     #else
+    Warning() << "Utility::Directory::mkdir(): not implemented on this platform";
     return false;
     #endif
 }
@@ -134,6 +163,13 @@ bool Directory::rm(const std::string& path) {
     /* std::remove() can't remove directories on Windows */
     if(GetFileAttributes(path.data()) & FILE_ATTRIBUTE_DIRECTORY)
         return RemoveDirectory(path.data());
+    #endif
+
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    /* std::remove() can't remove directories on Emscripten */
+    struct stat st;
+    if(lstat(path.data(), &st) == 0 && S_ISDIR(st.st_mode))
+        return rmdir(path.data()) == 0;
     #endif
 
     return std::remove(path.data()) == 0;
@@ -156,13 +192,71 @@ bool Directory::fileExists(const std::string& filename) {
     /* Windows Store/Phone not implemented */
     #else
     static_cast<void>(filename);
+    Warning() << "Utility::Directory::fileExists(): not implemented on this platform";
     return false;
     #endif
 }
 
+bool Directory::isSandboxed() {
+    #if defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID) || defined(CORRADE_TARGET_NACL) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT)
+    return true;
+    #elif defined(CORRADE_TARGET_APPLE)
+    return std::getenv("APP_SANDBOX_CONTAINER_ID");
+    #else
+    return false;
+    #endif
+}
+
+std::string Directory::executableLocation() {
+    /* Linux */
+    #if defined(__linux__)
+    /* Reallocate like hell until we have enough place to store the path. Can't
+       use lstat because the /proc/self/exe symlink is not a real symlink and
+       so stat::st_size returns 0. POSIX, WHAT THE HELL. */
+    constexpr const char self[]{"/proc/self/exe"};
+    std::string path(4, '\0');
+    ssize_t size;
+    while((size = readlink(self, &path[0], path.size())) == ssize_t(path.size()))
+        path.resize(path.size()*2);
+
+    CORRADE_INTERNAL_ASSERT(size > 0);
+
+    path.resize(size);
+    return path;
+
+    /* OSX, iOS */
+    #elif defined(CORRADE_TARGET_APPLE)
+    /* Get path size (need to set it to 0 to avoid filling nullptr with random
+       data and crashing) */
+    std::uint32_t size = 0;
+    CORRADE_INTERNAL_ASSERT_OUTPUT(_NSGetExecutablePath(nullptr, &size) == -1);
+
+    /* Allocate proper size and get the path */
+    std::string path(size, '\0');
+    CORRADE_INTERNAL_ASSERT_OUTPUT(_NSGetExecutablePath(&path[0], &size) == 0);
+    return path;
+
+    /* Windows (not RT) */
+    #elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+    HMODULE module = GetModuleHandle(nullptr);
+    std::string path(MAX_PATH, '\0');
+    std::size_t size = GetModuleFileName(module, &path[0], path.size());
+    path.resize(size);
+    return fromNativeSeparators(path);
+
+    /* hardcoded for Emscripten */
+    #elif defined(CORRADE_TARGET_EMSCRIPTEN)
+    return "/app.js";
+
+    /* Not implemented */
+    #else
+    return std::string{};
+    #endif
+}
+
 std::string Directory::home() {
-    /* Unix */
-    #ifdef CORRADE_TARGET_UNIX
+    /* Unix, Emscripten */
+    #if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
     if(const char* const h = std::getenv("HOME"))
         return h;
     return std::string{};
@@ -172,17 +266,23 @@ std::string Directory::home() {
     TCHAR h[MAX_PATH];
     if(!SUCCEEDED(SHGetFolderPath(nullptr, CSIDL_PERSONAL, nullptr, 0, h)))
         return {};
-    return h;
+    return fromNativeSeparators(h);
 
     /* Other */
     #else
+    Warning() << "Utility::Directory::home(): not implemented on this platform";
     return {};
     #endif
 }
 
 std::string Directory::configurationDir(const std::string& applicationName) {
-    /* XDG-compilant Unix */
-    #ifdef __unix__
+    /* OSX, iOS */
+    #ifdef CORRADE_TARGET_APPLE
+    return join(home(), "Library/Application Support/" + applicationName);
+
+    /* XDG-compliant Unix (not using CORRADE_TARGET_UNIX, because that is a
+       superset), Emscripten */
+    #elif defined(__unix__) || defined(CORRADE_TARGET_EMSCRIPTEN)
     const std::string lowercaseApplicationName = String::lowercase(applicationName);
     if(const char* const config = std::getenv("XDG_CONFIG_HOME"))
         return join(config, lowercaseApplicationName);
@@ -195,12 +295,48 @@ std::string Directory::configurationDir(const std::string& applicationName) {
     TCHAR path[MAX_PATH];
     if(!SUCCEEDED(SHGetFolderPath(nullptr, CSIDL_APPDATA, nullptr, 0, path)))
         return {};
-    const std::string appdata(path);
+    const std::string appdata{fromNativeSeparators(path)};
     return appdata.empty() ? std::string{} : join(appdata, applicationName);
 
     /* Other not implemented */
     #else
     static_cast<void>(applicationName);
+    Warning() << "Utility::Directory::configurationDir(): not implemented on this platform";
+    return {};
+    #endif
+}
+
+std::string Directory::tmp() {
+    #ifdef CORRADE_TARGET_UNIX
+    /* Sandboxed OSX, iOS */
+    #ifdef CORRADE_TARGET_APPLE
+    if(isSandboxed()) return join(home(), "tmp");
+    #endif
+
+    /* Android, you had to be special, right? */
+    #ifdef CORRADE_TARGET_ANDROID
+    return "/data/local/tmp";
+    #endif
+
+    /* Common Unix */
+    return "/tmp";
+
+    #elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+    /* Windows */
+
+    /* Get path size */
+    char c;
+    const std::size_t size = GetTempPath(1, &c);
+
+    /* Get the path, remove the trailing slash (and zero terminator) */
+    std::string path(size, '\0');
+    GetTempPath(size, &path[0]);
+    if(path.size()) path.resize(path.size() - 2);
+
+    /* Convert to forward slashes */
+    return fromNativeSeparators(path);
+    #else
+    Warning() << "Utility::Directory::tmp(): not implemented on this platform";
     return {};
     #endif
 }
@@ -208,8 +344,8 @@ std::string Directory::configurationDir(const std::string& applicationName) {
 std::vector<std::string> Directory::list(const std::string& path, Flags flags) {
     std::vector<std::string> list;
 
-    /* POSIX-compilant Unix */
-    #ifdef CORRADE_TARGET_UNIX
+    /* POSIX-compliant Unix, Emscripten */
+    #if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
     DIR* directory = opendir(path.data());
     if(!directory) return list;
 
@@ -263,6 +399,7 @@ std::vector<std::string> Directory::list(const std::string& path, Flags flags) {
 
     /* Other not implemented */
     #else
+    Warning() << "Utility::Directory::list(): not implemented on this platform";
     static_cast<void>(path);
     #endif
 
@@ -328,5 +465,139 @@ bool Directory::writeString(const std::string& filename, const std::string& data
     static_assert(sizeof(std::string::value_type) == 1, "std::string doesn't have 8-bit characters");
     return write(filename, {data.data(), data.size()});
 }
+
+#ifdef CORRADE_TARGET_UNIX
+void Directory::MapDeleter::operator()(const char* const data, const std::size_t size) {
+    if(data && munmap(const_cast<char*>(data), size) == -1)
+        Error() << "Utility::Directory: can't unmap memory-mapped file";
+    if(_fd) close(_fd);
+}
+
+Containers::Array<char, Directory::MapDeleter> Directory::map(const std::string& filename, std::size_t size) {
+    /* Open the file for writing. Create if it doesn't exist, truncate it if it
+       does. */
+    const int fd = open(filename.data(), O_RDWR|O_CREAT|O_TRUNC, mode_t(0600));
+    if(fd == -1) {
+        Error() << "Utility::Directory::map(): can't open the file";
+        return nullptr;
+    }
+
+    /* Resize the file to requested size by seeking one byte before */
+    if(lseek(fd, size - 1, SEEK_SET) == -1) {
+        close(fd);
+        Error() << "Utility::Directory::map(): can't seek to resize the file";
+        return nullptr;
+    }
+
+    /* And then writing a zero byte on that position */
+    if(::write(fd, "", 1) != 1) {
+        close(fd);
+        Error() << "Utility::Directory::map(): can't write to resize the file";
+        return nullptr;
+    }
+
+    /* Map the file */
+    char* data = reinterpret_cast<char*>(mmap(nullptr, size, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0));
+    if(data == MAP_FAILED) {
+        close(fd);
+        Error() << "Utility::Directory::map(): can't map the file";
+        return nullptr;
+    }
+
+    return Containers::Array<char, MapDeleter>{data, size, MapDeleter{fd}};
+}
+
+Containers::Array<const char, Directory::MapDeleter> Directory::mapRead(const std::string& filename) {
+    /* Open the file for reading */
+    const int fd = open(filename.data(), O_RDONLY);
+    if(fd == -1) {
+        Error() << "Utility::Directory::mapRead(): can't open the file";
+        return nullptr;
+    }
+
+    /* Get file size */
+    const off_t currentPos = lseek(fd, 0, SEEK_CUR);
+    const std::size_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, currentPos, SEEK_SET);
+
+    /* Map the file */
+    const char* data = reinterpret_cast<const char*>(mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0));
+    if(data == MAP_FAILED) {
+        close(fd);
+        Error() << "Utility::Directory::mapRead(): can't map the file";
+        return nullptr;
+    }
+
+    return Containers::Array<const char, MapDeleter>{data, size, MapDeleter{fd}};
+}
+#elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+void Directory::MapDeleter::operator()(const char* const data, const std::size_t) {
+    if(data) UnmapViewOfFile(data);
+    if(_hMap) CloseHandle(_hMap);
+    if(_hFile) CloseHandle(_hFile);
+}
+
+Containers::Array<char, Directory::MapDeleter> Directory::map(const std::string& filename, std::size_t size) {
+    /* Open the file for writing. Create if it doesn't exist, truncate it if it
+       does. */
+    HANDLE hFile = CreateFileA(filename.data(),
+        GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        Error() << "Utility::Directory::map(): can't open the file";
+        return nullptr;
+    }
+
+    /* Create the file mapping */
+    HANDLE hMap = CreateFileMappingW(hFile, nullptr, PAGE_READWRITE, 0, size, nullptr);
+    if (!hMap) {
+        Error() << "Utility::Directory::map(): can't create the file mapping:" << GetLastError();
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    /* Map the file */
+    char* data = reinterpret_cast<char*>(::MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+    if(!data) {
+        Error() << "Utility::Directory::map(): can't map the file:" << GetLastError();
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    return Containers::Array<char, MapDeleter>{data, size, MapDeleter{hFile, hMap}};
+}
+
+Containers::Array<const char, Directory::MapDeleter> Directory::mapRead(const std::string& filename) {
+    /* Open the file for reading */
+    HANDLE hFile = CreateFileA(filename.data(),
+        GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        Error() << "Utility::Directory::mapRead(): can't open the file";
+        return nullptr;
+    }
+
+    /* Create the file mapping */
+    HANDLE hMap = CreateFileMappingW(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    if (!hMap) {
+        Error() << "Utility::Directory::mapRead(): can't create the file mapping:" << GetLastError();
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    /* Get file size */
+    const size_t size = GetFileSize(hFile, nullptr);
+
+    /* Map the file */
+    char* data = reinterpret_cast<char*>(::MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0));
+    if(!data) {
+        Error() << "Utility::Directory::mapRead(): can't map the file:" << GetLastError();
+        CloseHandle(hMap);
+        CloseHandle(hFile);
+        return nullptr;
+    }
+
+    return Containers::Array<const char, MapDeleter>{data, size, MapDeleter{hFile, hMap}};
+}
+#endif
 
 }}

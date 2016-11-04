@@ -26,7 +26,7 @@
 */
 
 /** @file
- * @brief Macro @ref CORRADE_DEPRECATED(), @ref CORRADE_DEPRECATED_ALIAS(), @ref CORRADE_DEPRECATED_ENUM(), @ref CORRADE_DEPRECATED_FILE(), @ref CORRADE_UNUSED, @ref CORRADE_AUTOMATIC_INITIALIZER(), @ref CORRADE_AUTOMATIC_FINALIZER()
+ * @brief Macro @ref CORRADE_DEPRECATED(), @ref CORRADE_DEPRECATED_ALIAS(), @ref CORRADE_DEPRECATED_ENUM(), @ref CORRADE_DEPRECATED_FILE(), @ref CORRADE_UNUSED, @ref CORRADE_ALIGNAS(), @ref CORRADE_AUTOMATIC_INITIALIZER(), @ref CORRADE_AUTOMATIC_FINALIZER()
  */
 
 #ifndef DOXYGEN_GENERATING_OUTPUT
@@ -45,6 +45,7 @@ compilers (GCC, Clang, MSVC):
 @code
 class CORRADE_DEPRECATED("use Bar instead") Foo;
 CORRADE_DEPRECATED("use bar() instead") void foo();
+typedef CORRADE_DEPRECATED("use Fizz instead") Output<5> Buzz;
 @endcode
 
 Does not work on template aliases and enum values, use
@@ -79,7 +80,7 @@ template<class T> using Foo CORRADE_DEPRECATED_ALIAS("use Bar instead") = Bar<T>
 @brief Enum deprecation mark
 
 Marked enum or enum value will emit deprecation warning on supported compilers
-(C++17 feature, Clang only):
+(C++17 feature, Clang and GCC 6+):
 @code
 enum class CORRADE_DEPRECATED_ENUM("use Bar instead") Foo {};
 
@@ -93,7 +94,7 @@ enum class Bar {
     @ref CORRADE_DEPRECATED_FILE()
 */
 /** @todo Why this worked with [[deprecated]] before MSVC 2015 Update 1? */
-#if defined(__clang__)
+#if defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 6)
 #define CORRADE_DEPRECATED_ENUM(message) __attribute((deprecated(message)))
 #else
 #define CORRADE_DEPRECATED_ENUM(message)
@@ -129,6 +130,21 @@ parameters instead.
 #define CORRADE_UNUSED __pragma(warning(suppress:4100))
 #else
 #define CORRADE_UNUSED
+#endif
+
+/** @hideinitializer
+@brief Type alignment specifier
+
+Expands to C++11 `alignas()` specifier on supported compilers, otherwise falls
+back to compiler-specific attribute. Example usage:
+@code
+CORRADE_ALIGNAS(4) char data[16]; // so it can be read as 32-bit integers
+@endcode
+*/
+#if defined(__GNUC__) && __GNUC__*100 + __GNUC_MINOR__ < 408
+#define CORRADE_ALIGNAS(alignment) __attribute__((aligned(alignment)))
+#else
+#define CORRADE_ALIGNAS(alignment) alignas(alignment)
 #endif
 
 /** @hideinitializer

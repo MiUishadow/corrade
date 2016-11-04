@@ -245,7 +245,13 @@ template<class T> Debug& Debug::print(const T& value) {
 }
 
 Debug& Debug::operator<<(const std::string& value) { return print(value); }
-Debug& Debug::operator<<(const void* value) { return print(value); }
+
+Debug& Debug::operator<<(const void* const value) {
+    std::ostringstream o;
+    o << "0x" << std::hex << reinterpret_cast<std::uintptr_t>(value);
+    return print(o.str());
+}
+
 Debug& Debug::operator<<(const char* value) { return print(value); }
 Debug& Debug::operator<<(bool value) { return print(value ? "true" : "false"); }
 Debug& Debug::operator<<(int value) { return print(value); }
@@ -254,10 +260,23 @@ Debug& Debug::operator<<(long long value) { return print(value); }
 Debug& Debug::operator<<(unsigned value) { return print(value); }
 Debug& Debug::operator<<(unsigned long value) { return print(value); }
 Debug& Debug::operator<<(unsigned long long value) { return print(value); }
-Debug& Debug::operator<<(float value) { return print(value); }
-Debug& Debug::operator<<(double value) { return print(value); }
+Debug& Debug::operator<<(float value) {
+    if(!_output) return *this;
+    /* The default. Source: http://en.cppreference.com/w/cpp/io/ios_base/precision */
+    *_output << std::setprecision(6);
+    return print(value);
+}
+Debug& Debug::operator<<(double value) {
+    if(!_output) return *this;
+    *_output << std::setprecision(15);
+    return print(value);
+}
 #ifndef CORRADE_TARGET_EMSCRIPTEN
-Debug& Debug::operator<<(long double value) { return print(value); }
+Debug& Debug::operator<<(long double value) {
+    if(!_output) return *this;
+    *_output << std::setprecision(18);
+    return print(value);
+}
 #endif
 
 Debug& Debug::operator<<(char32_t value) {

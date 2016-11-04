@@ -23,22 +23,18 @@
     DEALINGS IN THE SOFTWARE.
 */
 
-#include "utilities.h"
+#include "Dog.h"
 
-#ifndef CORRADE_TARGET_WINDOWS
-#include "unistd.h"
-#else
-#include <windows.h>
-#endif
+namespace Corrade { namespace PluginManager { namespace Test {
 
-namespace Corrade { namespace Utility {
+class PitBull: public Dog {
+    public:
+        explicit PitBull(AbstractManager& manager, std::string plugin): Dog(manager, std::move(plugin)) {}
 
-void sleep(std::size_t ms) {
-    #ifndef CORRADE_TARGET_WINDOWS
-    usleep(ms*1000);
-    #else
-    Sleep(ms);
-    #endif
-}
+        std::string name() override { return "Rodriguez"; }
+};
 
-}}
+}}}
+
+CORRADE_PLUGIN_REGISTER(PitBull, Corrade::PluginManager::Test::PitBull,
+                "cz.mosra.Corrade.PluginManager.Test.AbstractAnimal/1.0")

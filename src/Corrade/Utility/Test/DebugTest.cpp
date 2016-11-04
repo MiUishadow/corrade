@@ -39,8 +39,10 @@ struct DebugTest: TestSuite::Tester {
     explicit DebugTest();
 
     void debug();
+    template<class T> void floats();
     void boolean();
     void chars();
+    void pointer();
     void unicode();
     void custom();
     void nospace();
@@ -66,9 +68,14 @@ struct DebugTest: TestSuite::Tester {
 
 DebugTest::DebugTest() {
     addTests({
-        &DebugTest::debug,
         &DebugTest::boolean,
+        &DebugTest::floats<float>,
+        &DebugTest::floats<double>,
+        #ifndef CORRADE_TARGET_EMSCRIPTEN
+        &DebugTest::floats<long double>,
+        #endif
         &DebugTest::chars,
+        &DebugTest::pointer,
         &DebugTest::unicode,
         &DebugTest::custom,
         &DebugTest::nospace,
@@ -121,6 +128,61 @@ void DebugTest::debug() {
     CORRADE_COMPARE(debug.str(), "");
 }
 
+namespace {
+    template<class> struct FloatsData;
+    template<> struct FloatsData<float> {
+        static const char* name() { return "floats<float>"; }
+        static const char* expected() {
+            #ifndef __MINGW32__
+            return "3.14159 -12345.7 1.23457e-12 3.14159\n";
+            #else
+            return "3.14159 -12345.7 1.23457e-012 3.14159\n";
+            #endif
+        }
+    };
+    template<> struct FloatsData<double> {
+        static const char* name() { return "floats<double>"; }
+        static const char* expected() {
+            #ifndef __MINGW32__
+            return "3.14159265358979 -12345.6789012346 1.23456789012346e-12 3.14159\n";
+            #else
+            return "3.14159265358979 -12345.6789012346 1.23456789012346e-012 3.14159\n";
+            #endif
+        }
+    };
+    #ifndef CORRADE_TARGET_EMSCRIPTEN
+    template<> struct FloatsData<long double> {
+        static const char* name() { return "floats<long double>"; }
+        static const char* expected() {
+            #ifndef __MINGW32__
+            return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-12 3.14159\n";
+            #else
+            return "3.14159265358979324 -12345.6789012345679 1.23456789012345679e-012 3.14159\n";
+            #endif
+        }
+    };
+    #endif
+}
+
+template<class T> void DebugTest::floats() {
+    setTestCaseName(FloatsData<T>::name());
+
+    std::ostringstream o;
+    /* The last float value is to verify that the precision gets reset back */
+    Debug(&o) << T(3.1415926535897932384626l) << T(-12345.67890123456789l) << T(1.234567890123456789e-12l) << 3.141592653589793f;
+    {
+        #ifdef _MSC_VER
+        /* Source: https://msdn.microsoft.com/en-us/library/9cx8xs15.aspx */
+        CORRADE_EXPECT_FAIL_IF((std::is_same<T, long double>::value), "MSVC treats long double as double.");
+        #endif
+
+        #ifdef CORRADE_TARGET_ANDROID
+        CORRADE_EXPECT_FAIL_IF((std::is_same<T, long double>::value), "Android probably also treats long double as double.");
+        #endif
+        CORRADE_COMPARE(o.str(), FloatsData<T>::expected());
+    }
+}
+
 void DebugTest::boolean() {
     std::ostringstream o;
     Debug(&o) << true << false;
@@ -131,6 +193,12 @@ void DebugTest::chars() {
     std::ostringstream o;
     Debug(&o) << 'a';
     CORRADE_COMPARE(o.str(), "97\n");
+}
+
+void DebugTest::pointer() {
+    std::ostringstream out;
+    Debug{&out} << reinterpret_cast<void*>(0xdeadbabe);
+    CORRADE_COMPARE(out.str(), "0xdeadbabe\n");
 }
 
 void DebugTest::unicode() {
@@ -234,7 +302,7 @@ void DebugTest::colors() {
 
     fn(std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out;
@@ -252,7 +320,7 @@ void DebugTest::colorsAutoReset() {
     /* Print it for visual verification */
     fn(std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out;
@@ -271,7 +339,7 @@ void DebugTest::colorsExplicitReset() {
     /* Print it for visual verification */
     fn(std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out;
@@ -292,7 +360,7 @@ void DebugTest::colorsDisabled() {
     /* Print it for visual verification */
     fn(std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out;
@@ -329,7 +397,7 @@ void DebugTest::colorsNospace() {
     /* Print it for visual verification */
     fn(std::cout, std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out1, out2;
@@ -360,7 +428,7 @@ void DebugTest::colorsScoped() {
     /* Print it for visual verification */
     fn(std::cout);
 
-    #ifdef CORRADE_TARGET_WINDOWS
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
     CORRADE_SKIP("Only possible to test visually on Windows.");
     #else
     std::ostringstream out;

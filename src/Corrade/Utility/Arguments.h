@@ -160,6 +160,20 @@ Upon calling `--formatter-help` the application prints the following:
 */
 class CORRADE_UTILITY_EXPORT Arguments {
     public:
+        /**
+         * @brief Environment values
+         *
+         * Returns list of all environment values for information and debugging
+         * purposes.
+         * @note In @ref CORRADE_TARGET_EMSCRIPTEN "Emscripten" the environment
+         *      list is concatenated from local Emscripten environment and
+         *      system environment provided by Node.js.
+         * @see @ref setFromEnvironment()
+         * @partialsupport Returns empty vector on
+         *      @ref CORRADE_TARGET_WINDOWS_RT "Windows RT".
+         */
+        static std::vector<std::string> environment();
+
         /** @brief Default constructor */
         explicit Arguments();
 
@@ -353,9 +367,24 @@ class CORRADE_UTILITY_EXPORT Arguments {
          *
          * Boolean options are set to `true` when environment value is present
          * (not depending on its value).
+         * @note In @ref CORRADE_TARGET_EMSCRIPTEN "Emscripten" the environment
+         *      is combined from local Emscripten environment and system
+         *      environment provided by Node.js. If a variable is in both
+         *      environments, the local environment is preferred.
+         * @see @ref environment()
+         * @partialsupport Does nothing on @ref CORRADE_TARGET_WINDOWS_RT "Windows RT".
          */
+        #ifndef CORRADE_TARGET_WINDOWS_RT
         Arguments& setFromEnvironment(const std::string& key, std::string environmentVariable);
         Arguments& setFromEnvironment(const std::string& key); /**< @overload */
+        #else
+        template<class T, class U> Arguments& setFromEnvironment(T&&, U&&) {
+            return *this;
+        }
+        template<class T> Arguments& setFromEnvironment(T&&) {
+            return *this;
+        }
+        #endif
 
         /**
          * @brief Set command name

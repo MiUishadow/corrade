@@ -23,10 +23,13 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#include <sstream>
+
 #include "Corrade/Containers/Array.h"
 #include "Corrade/TestSuite/Tester.h"
 #include "Corrade/TestSuite/Compare/Container.h"
 #include "Corrade/TestSuite/Compare/File.h"
+#include "Corrade/TestSuite/Compare/FileToString.h"
 #include "Corrade/Utility/Directory.h"
 
 #include "configure.h"
@@ -36,6 +39,8 @@ namespace Corrade { namespace Utility { namespace Test {
 struct DirectoryTest: TestSuite::Tester {
     explicit DirectoryTest();
 
+    void fromNativeSeparators();
+    void toNativeSeparators();
     void path();
     void filename();
     void join();
@@ -43,40 +48,113 @@ struct DirectoryTest: TestSuite::Tester {
     void joinWindows();
     #endif
     void fileExists();
-    void remove();
+    void removeFile();
+    void removeDirectory();
     void moveFile();
     void moveDirectory();
     void mkpath();
+    void mkpathNoPermission();
+    void isSandboxed();
+    void executableLocation();
     void home();
     void configurationDir();
+    void tmp();
+
     void list();
+    void listSkipDirectories();
+    void listSkipFiles();
+    void listSkipSpecial();
+    void listSkipDotAndDotDot();
+    void listSort();
     void listSortPrecedence();
+
     void read();
     void readEmpty();
     void readNonSeekable();
     void write();
+
+    void map();
+    void mapNoPermission();
+    void mapRead();
+    void mapReadNonexistent();
+
+    std::string _testDir,
+        _writeTestDir;
 };
 
 DirectoryTest::DirectoryTest() {
-    addTests({&DirectoryTest::path,
+    addTests({&DirectoryTest::fromNativeSeparators,
+              &DirectoryTest::toNativeSeparators,
+              &DirectoryTest::path,
               &DirectoryTest::filename,
               &DirectoryTest::join,
               #ifdef CORRADE_TARGET_WINDOWS
               &DirectoryTest::joinWindows,
               #endif
               &DirectoryTest::fileExists,
-              &DirectoryTest::remove,
+              &DirectoryTest::removeFile,
+              &DirectoryTest::removeDirectory,
               &DirectoryTest::moveFile,
               &DirectoryTest::moveDirectory,
               &DirectoryTest::mkpath,
+              &DirectoryTest::mkpathNoPermission,
+              &DirectoryTest::isSandboxed,
+              &DirectoryTest::executableLocation,
               &DirectoryTest::home,
               &DirectoryTest::configurationDir,
+              &DirectoryTest::tmp,
+
               &DirectoryTest::list,
+              &DirectoryTest::listSkipDirectories,
+              &DirectoryTest::listSkipFiles,
+              &DirectoryTest::listSkipSpecial,
+              &DirectoryTest::listSkipDotAndDotDot,
+              &DirectoryTest::listSort,
               &DirectoryTest::listSortPrecedence,
+
               &DirectoryTest::read,
               &DirectoryTest::readEmpty,
               &DirectoryTest::readNonSeekable,
-              &DirectoryTest::write});
+              &DirectoryTest::write,
+
+              &DirectoryTest::map,
+              &DirectoryTest::mapNoPermission,
+              &DirectoryTest::mapRead,
+              &DirectoryTest::mapReadNonexistent});
+
+    #ifdef CORRADE_TARGET_APPLE
+    if(Directory::isSandboxed()
+        #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+        /** @todo Fix this once I persuade CMake to run XCTest tests properly */
+        && std::getenv("SIMULATOR_UDID")
+        #endif
+    ) {
+        _testDir = Directory::join(Directory::path(Directory::executableLocation()), "DirectoryTestFiles");
+        _writeTestDir = Directory::join(Directory::home(), "Library/Caches");
+    } else
+    #endif
+    {
+        _testDir = DIRECTORY_TEST_DIR;
+        _writeTestDir = DIRECTORY_WRITE_TEST_DIR;
+    }
+}
+
+void DirectoryTest::fromNativeSeparators() {
+    const std::string nativeSeparators = Directory::fromNativeSeparators("put\\ that/somewhere\\ else");
+    #ifdef CORRADE_TARGET_WINDOWS
+    CORRADE_COMPARE(nativeSeparators, "put/ that/somewhere/ else");
+    #else
+    CORRADE_COMPARE(nativeSeparators, "put\\ that/somewhere\\ else");
+    #endif
+}
+
+void DirectoryTest::toNativeSeparators() {
+    const std::string nativeSeparators = Directory::toNativeSeparators("this\\is a weird/system\\right");
+    #ifdef CORRADE_TARGET_WINDOWS
+    CORRADE_COMPARE(nativeSeparators, "this\\is a weird\\system\\right");
+    #else
+    CORRADE_COMPARE(nativeSeparators, "this\\is a weird/system\\right");
+    #endif
 }
 
 void DirectoryTest::path() {
@@ -127,43 +205,46 @@ void DirectoryTest::joinWindows() {
 
 void DirectoryTest::fileExists() {
     /* File */
-    CORRADE_VERIFY(Directory::fileExists(Directory::join(DIRECTORY_TEST_DIR, "file")));
+    CORRADE_VERIFY(Directory::fileExists(Directory::join(_testDir, "file")));
 
     /* Directory */
-    CORRADE_VERIFY(Directory::fileExists(DIRECTORY_TEST_DIR));
+    CORRADE_VERIFY(Directory::fileExists(_testDir));
 
     /* Nonexistent file */
-    CORRADE_VERIFY(!Directory::fileExists(Directory::join(DIRECTORY_TEST_DIR, "nonexistentFile")));
+    CORRADE_VERIFY(!Directory::fileExists(Directory::join(_testDir, "nonexistentFile")));
 }
 
-void DirectoryTest::remove() {
-    /* Directory */
-    std::string directory = Directory::join(DIRECTORY_WRITE_TEST_DIR, "directory");
-    CORRADE_VERIFY(Directory::mkpath(directory));
-    CORRADE_VERIFY(Directory::fileExists(directory));
-    CORRADE_VERIFY(Directory::rm(directory));
-    CORRADE_VERIFY(!Directory::fileExists(directory));
-
+void DirectoryTest::removeFile() {
     /* File */
-    std::string file = Directory::join(DIRECTORY_WRITE_TEST_DIR, "file.txt");
+    std::string file = Directory::join(_writeTestDir, "file.txt");
+    CORRADE_VERIFY(Directory::mkpath(_writeTestDir));
     CORRADE_VERIFY(Directory::writeString(file, "a"));
     CORRADE_VERIFY(Directory::fileExists(file));
     CORRADE_VERIFY(Directory::rm(file));
     CORRADE_VERIFY(!Directory::fileExists(file));
 
     /* Nonexistent file */
-    std::string nonexistent = Directory::join(DIRECTORY_WRITE_TEST_DIR, "nonexistent");
+    std::string nonexistent = Directory::join(_writeTestDir, "nonexistent");
     CORRADE_VERIFY(!Directory::fileExists(nonexistent));
     CORRADE_VERIFY(!Directory::rm(nonexistent));
 }
 
+void DirectoryTest::removeDirectory() {
+    /* Directory */
+    std::string directory = Directory::join(_writeTestDir, "directory");
+    CORRADE_VERIFY(Directory::mkpath(directory));
+    CORRADE_VERIFY(Directory::fileExists(directory));
+    CORRADE_VERIFY(Directory::rm(directory));
+    CORRADE_VERIFY(!Directory::fileExists(directory));
+}
+
 void DirectoryTest::moveFile() {
     /* Old file */
-    std::string oldFile = Directory::join(DIRECTORY_WRITE_TEST_DIR, "oldFile.txt");
+    std::string oldFile = Directory::join(_writeTestDir, "oldFile.txt");
     CORRADE_VERIFY(Directory::writeString(oldFile, "a"));
 
     /* New file, remove if exists */
-    std::string newFile = Directory::join(DIRECTORY_WRITE_TEST_DIR, "newFile.txt");
+    std::string newFile = Directory::join(_writeTestDir, "newFile.txt");
     Directory::rm(newFile);
 
     CORRADE_VERIFY(Directory::fileExists(oldFile));
@@ -175,12 +256,12 @@ void DirectoryTest::moveFile() {
 
 void DirectoryTest::moveDirectory() {
     /* Old directory, create if not exists */
-    std::string oldDirectory = Directory::join(DIRECTORY_WRITE_TEST_DIR, "oldDirectory");
+    std::string oldDirectory = Directory::join(_writeTestDir, "oldDirectory");
     if(!Directory::fileExists(oldDirectory))
         CORRADE_VERIFY(Directory::mkpath(oldDirectory));
 
     /* New directory, remove if exists */
-    std::string newDirectory = Directory::join(DIRECTORY_WRITE_TEST_DIR, "newDirectory");
+    std::string newDirectory = Directory::join(_writeTestDir, "newDirectory");
     if(Directory::fileExists(newDirectory))
         CORRADE_VERIFY(Directory::rm(newDirectory));
 
@@ -191,49 +272,124 @@ void DirectoryTest::moveDirectory() {
 
 void DirectoryTest::mkpath() {
     /* Existing */
-    CORRADE_VERIFY(Directory::fileExists(DIRECTORY_WRITE_TEST_DIR));
-    CORRADE_VERIFY(Directory::mkpath(DIRECTORY_WRITE_TEST_DIR));
+    CORRADE_VERIFY(Directory::fileExists(_writeTestDir));
+    CORRADE_VERIFY(Directory::mkpath(_writeTestDir));
 
     /* Leaf */
-    std::string leaf = Directory::join(DIRECTORY_WRITE_TEST_DIR, "leaf");
+    std::string leaf = Directory::join(_writeTestDir, "leaf");
     if(Directory::fileExists(leaf)) CORRADE_VERIFY(Directory::rm(leaf));
     CORRADE_VERIFY(Directory::mkpath(leaf));
     CORRADE_VERIFY(Directory::fileExists(leaf));
 
     /* Path */
-    std::string path = Directory::join(DIRECTORY_WRITE_TEST_DIR, "path/to/new/dir");
+    std::string path = Directory::join(_writeTestDir, "path/to/new/dir");
     if(Directory::fileExists(path)) CORRADE_VERIFY(Directory::rm(path));
-    if(Directory::fileExists(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path/to/new")))
-        CORRADE_VERIFY(Directory::rm(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path/to/new")));
-    if(Directory::fileExists(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path/to")))
-        CORRADE_VERIFY(Directory::rm(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path/to")));
-    if(Directory::fileExists(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path")))
-        CORRADE_VERIFY(Directory::rm(Directory::join(DIRECTORY_WRITE_TEST_DIR, "path")));
+    if(Directory::fileExists(Directory::join(_writeTestDir, "path/to/new")))
+        CORRADE_VERIFY(Directory::rm(Directory::join(_writeTestDir, "path/to/new")));
+    if(Directory::fileExists(Directory::join(_writeTestDir, "path/to")))
+        CORRADE_VERIFY(Directory::rm(Directory::join(_writeTestDir, "path/to")));
+    if(Directory::fileExists(Directory::join(_writeTestDir, "path")))
+        CORRADE_VERIFY(Directory::rm(Directory::join(_writeTestDir, "path")));
 
     CORRADE_VERIFY(Directory::mkpath(leaf));
     CORRADE_VERIFY(Directory::fileExists(leaf));
+}
+
+void DirectoryTest::mkpathNoPermission() {
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    CORRADE_SKIP("Everything is writeable under Emscripten");
+    #elif !defined(CORRADE_TARGET_WINDOWS)
+    if(Directory::fileExists("/nope"))
+        CORRADE_SKIP("Can't test because the destination might be writeable");
+
+    CORRADE_VERIFY(!Directory::mkpath("/nope/never"));
+    #else
+    if(Directory::fileExists("W:/"))
+        CORRADE_SKIP("Can't test because the destination might be writeable");
+
+    CORRADE_VERIFY(!Directory::mkpath("W:/nope"));
+    #endif
+}
+
+void DirectoryTest::isSandboxed() {
+    #if defined(CORRADE_TARGET_ANDROID) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_NACL) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_VERIFY(Directory::isSandboxed());
+    #else
+    CORRADE_VERIFY(!Directory::isSandboxed());
+    #endif
+}
+
+void DirectoryTest::executableLocation() {
+    const std::string executableLocation = Directory::executableLocation();
+    Debug() << "Executable location found as:" << executableLocation;
+
+    /* On sandboxed OSX and iOS verify that the directory contains Info.plist
+       file */
+    #ifdef CORRADE_TARGET_APPLE
+    if(Directory::isSandboxed()) {
+        #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+        CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+            "CTest is not able to run XCTest executables properly in the simulator.");
+        #endif
+
+        CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(executableLocation), "Info.plist")));
+    } else
+    #endif
+
+    /* On Emscripten we should have access to the bundled files */
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(executableLocation), "DirectoryTestFiles")));
+
+    /* On Android we can't be sure about anything, so just test that the
+       executable exists and it has access to the bundled files */
+    #elif defined(CORRADE_TARGET_ANDROID)
+    CORRADE_VERIFY(Directory::fileExists(executableLocation));
+    CORRADE_VERIFY(executableLocation.find("UtilityDirectoryTest") != std::string::npos);
+    CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(executableLocation), "DirectoryTestFiles")));
+
+    /* Otherwise it should contain CMake build files */
+    #else
+    {
+        #ifdef CMAKE_INTDIR
+        CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(Directory::path(executableLocation)), "CMakeFiles")));
+        #else
+        CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(executableLocation), "CMakeFiles")));
+        #endif
+    }
+    #endif
+
+    /* On Windows it shouldn't contain backslashes */
+    #ifdef CORRADE_TARGET_WINDOWS
+    CORRADE_COMPARE(executableLocation.find('\\'), std::string::npos);
+    #endif
 }
 
 void DirectoryTest::home() {
     const std::string home = Directory::home();
     Debug() << "Home dir found as:" << home;
 
-    /* On OSX verify that the home dir contains `Desktop` directory. Hopefully
-       that's true on all language mutations. */
+    /* On OSX and iOS verify that the home dir contains `Library` directory */
     #ifdef CORRADE_TARGET_APPLE
-    CORRADE_VERIFY(Directory::fileExists(Directory::join(home, "Desktop")));
+    CORRADE_VERIFY(Directory::fileExists(Directory::join(home, "Library")));
 
-    /* On other Unixes verify that the home dir contains `.local` directory.
-       Ugly and hacky, but it's the best I came up with. Can't test for e.g.
-       `/home/` substring, as that can be overriden. */
-    #elif defined(CORRADE_TARGET_UNIX)
+    /* On other Unixes (except Android, which is shit) verify that the home dir
+       contains `.local` directory. Ugly and hacky, but it's the best I came up
+       with. Can't test for e.g. `/home/` substring, as that can be overriden. */
+    #elif defined(CORRADE_TARGET_UNIX) && !defined(CORRADE_TARGET_ANDROID)
     CORRADE_VERIFY(Directory::fileExists(Directory::join(home, ".local")));
+
+    /* On Emscripten verify that the directory exists (it's empty by default) */
+    #elif defined(CORRADE_TARGET_EMSCRIPTEN)
+    CORRADE_VERIFY(Directory::fileExists(home));
 
     /* On Windows verify that the home dir contains `desktop.ini` file. Ugly
        and hacky, but it's the best I came up with. Can't test for e.g.
        `/Users/` substring, as that can be overriden. */
     #elif defined(CORRADE_TARGET_WINDOWS)
     CORRADE_VERIFY(Directory::fileExists(Directory::join(home, "desktop.ini")));
+
+    /* On Windows it also shouldn't contain backslashes */
+    CORRADE_COMPARE(home.find('\\'), std::string::npos);
 
     /* No idea elsewhere */
     #else
@@ -246,15 +402,26 @@ void DirectoryTest::configurationDir() {
     const std::string dir = Directory::configurationDir("Corrade");
     Debug() << "Configuration dir found as:" << dir;
 
+    #ifdef CORRADE_TARGET_APPLE
+    CORRADE_COMPARE(dir.substr(dir.size() - 7), "Corrade");
+    if(Directory::isSandboxed())
+        CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(Directory::path(dir)), "Caches")));
+    else
+        CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(dir), "App Store")));
+
     /* On Linux verify that the parent dir contains `autostart` directory,
        something from GTK or something from Qt. Ugly and hacky, but it's the
        best I could come up with. Can't test for e.g. `/home/` substring, as
        that can be overriden. */
-    #if __linux__
+    #elif defined(__linux__) && !defined(CORRADE_TARGET_ANDROID)
     CORRADE_COMPARE(dir.substr(dir.size()-7), "corrade");
     CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(dir), "autostart")) ||
                    Directory::fileExists(Directory::join(Directory::path(dir), "dconf")) ||
                    Directory::fileExists(Directory::join(Directory::path(dir), "Trolltech.conf")));
+
+    /* Emscripten -- just compare to hardcoded value */
+    #elif defined(CORRADE_TARGET_EMSCRIPTEN)
+    CORRADE_COMPARE(Directory::path(dir), "/home/web_user/.config");
 
     /* On Windows verify that the parent dir contains `Microsoft` subdirectory.
        Ugly and hacky, but it's the best I came up with. Can't test for e.g.
@@ -262,6 +429,37 @@ void DirectoryTest::configurationDir() {
     #elif defined(CORRADE_TARGET_WINDOWS)
     CORRADE_COMPARE(dir.substr(dir.size()-7), "Corrade");
     CORRADE_VERIFY(Directory::fileExists(Directory::join(Directory::path(dir), "Microsoft")));
+
+    /* On Windows it also shouldn't contain backslashes */
+    CORRADE_COMPARE(dir.find('\\'), std::string::npos);
+
+    /* No idea elsewhere */
+    #else
+    CORRADE_EXPECT_FAIL("Not implemented yet.");
+    CORRADE_COMPARE(dir, "(not implemented)");
+    #endif
+}
+
+void DirectoryTest::tmp() {
+    const std::string dir = Directory::tmp();
+    Debug() << "Temporary dir found as:" << dir;
+
+    #ifdef CORRADE_TARGET_UNIX
+    {
+        #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+        CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+            "CTest is not able to run XCTest executables properly in the simulator.");
+        #endif
+        CORRADE_VERIFY(Directory::fileExists(dir));
+    }
+    CORRADE_VERIFY(dir.find("tmp") != std::string::npos);
+
+    #elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+    CORRADE_VERIFY(Directory::fileExists(dir));
+    CORRADE_VERIFY(dir.find("Temp") != std::string::npos);
+
+    /* On Windows it also shouldn't contain backslashes */
+    CORRADE_COMPARE(dir.find('\\'), std::string::npos);
 
     /* No idea elsewhere */
     #else
@@ -271,52 +469,85 @@ void DirectoryTest::configurationDir() {
 }
 
 void DirectoryTest::list() {
-    /* All */
-    CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR),
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
+
+    CORRADE_COMPARE_AS(Directory::list(_testDir),
         (std::vector<std::string>{".", "..", "dir", "file"}),
         TestSuite::Compare::SortedContainer);
+}
 
-    {
-        #ifdef TRAVIS_CI_HAS_CRAZY_FILESYSTEM_ON_LINUX
-        CORRADE_EXPECT_FAIL("Travis CI has crazy filesystem on Linux.");
-        #endif
+void DirectoryTest::listSkipDirectories() {
+    #ifdef TRAVIS_CI_HAS_CRAZY_FILESYSTEM_ON_LINUX
+    CORRADE_EXPECT_FAIL("Travis CI has crazy filesystem on Linux.");
+    #endif
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
 
-        /* Skip special */
-        CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SkipSpecial),
-            (std::vector<std::string>{".", "..", "dir", "file"}),
-            TestSuite::Compare::SortedContainer);
-    }
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SkipDirectories),
+        std::vector<std::string>{"file"},
+        TestSuite::Compare::SortedContainer);
+}
 
-    /* All, sorted ascending */
-    CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SortAscending),
+void DirectoryTest::listSkipFiles() {
+    #ifdef TRAVIS_CI_HAS_CRAZY_FILESYSTEM_ON_LINUX
+    CORRADE_EXPECT_FAIL("Travis CI has crazy filesystem on Linux.");
+    #endif
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
+
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SkipFiles),
+        (std::vector<std::string>{".", "..", "dir"}),
+        TestSuite::Compare::SortedContainer);
+}
+
+void DirectoryTest::listSkipSpecial() {
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    CORRADE_EXPECT_FAIL("Files are treated as special in Emscripten.");
+    #endif
+    #ifdef TRAVIS_CI_HAS_CRAZY_FILESYSTEM_ON_LINUX
+    CORRADE_EXPECT_FAIL("Travis CI has crazy filesystem on Linux.");
+    #endif
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
+
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SkipSpecial),
         (std::vector<std::string>{".", "..", "dir", "file"}),
-        TestSuite::Compare::Container);
+        TestSuite::Compare::SortedContainer);
+}
 
-    /* All, sorted descending */
-    CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SortDescending),
-        (std::vector<std::string>{"file", "dir", "..", "."}),
-        TestSuite::Compare::Container);
+void DirectoryTest::listSkipDotAndDotDot() {
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
 
-    /* Skip . and .. */
-    CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SkipDotAndDotDot),
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SkipDotAndDotDot),
         (std::vector<std::string>{"dir", "file"}),
         TestSuite::Compare::SortedContainer);
+}
 
-    {
-        #ifdef TRAVIS_CI_HAS_CRAZY_FILESYSTEM_ON_LINUX
-        CORRADE_EXPECT_FAIL("Travis CI has crazy filesystem on Linux.");
-        #endif
+void DirectoryTest::listSort() {
+    #if defined(CORRADE_TARGET_IOS) && defined(CORRADE_TESTSUITE_TARGET_XCTEST)
+    CORRADE_EXPECT_FAIL_IF(!std::getenv("SIMULATOR_UDID"),
+        "CTest is not able to run XCTest executables properly in the simulator.");
+    #endif
 
-        /* Skip directories */
-        CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SkipDirectories),
-            std::vector<std::string>{"file"},
-            TestSuite::Compare::SortedContainer);
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SortAscending),
+        (std::vector<std::string>{".", "..", "dir", "file"}),
+        TestSuite::Compare::Container);
 
-        /* Skip files */
-        CORRADE_COMPARE_AS(Directory::list(DIRECTORY_TEST_DIR, Directory::Flag::SkipFiles),
-            (std::vector<std::string>{".", "..", "dir"}),
-            TestSuite::Compare::SortedContainer);
-    }
+    CORRADE_COMPARE_AS(Directory::list(_testDir, Directory::Flag::SortDescending),
+        (std::vector<std::string>{"file", "dir", "..", "."}),
+        TestSuite::Compare::Container);
 }
 
 void DirectoryTest::listSortPrecedence() {
@@ -326,7 +557,7 @@ void DirectoryTest::listSortPrecedence() {
 void DirectoryTest::read() {
     /* Existing file, check if we are reading it as binary (CR+LF is not
        converted to LF) and nothing after \0 gets lost */
-    CORRADE_COMPARE_AS(Directory::read(Directory::join(DIRECTORY_TEST_DIR, "file")),
+    CORRADE_COMPARE_AS(Directory::read(Directory::join(_testDir, "file")),
         (Containers::Array<char>::from(0xCA, 0xFE, 0xBA, 0xBE, 0x0D, 0x0A, 0x00, 0xDE, 0xAD, 0xBE, 0xEF)),
         TestSuite::Compare::Container);
 
@@ -335,18 +566,18 @@ void DirectoryTest::read() {
     CORRADE_VERIFY(!none);
 
     /* Read into string */
-    CORRADE_COMPARE(Directory::readString(Directory::join(DIRECTORY_TEST_DIR, "file")),
+    CORRADE_COMPARE(Directory::readString(Directory::join(_testDir, "file")),
         std::string("\xCA\xFE\xBA\xBE\x0D\x0A\x00\xDE\xAD\xBE\xEF", 11));
 }
 
 void DirectoryTest::readEmpty() {
-    const std::string empty = Directory::join(DIRECTORY_TEST_DIR, "dir/dummy");
+    const std::string empty = Directory::join(_testDir, "dir/dummy");
     CORRADE_VERIFY(Directory::fileExists(empty));
     CORRADE_VERIFY(!Directory::read(empty));
 }
 
 void DirectoryTest::readNonSeekable() {
-    #ifdef __unix__ /* (OS X doesn't have /proc) */
+    #if defined(__unix__) && !defined(CORRADE_TARGET_EMSCRIPTEN) /* (OS X doesn't have /proc) */
     /** @todo Test more thoroughly than this */
     const auto data = Directory::read("/proc/loadavg");
     CORRADE_VERIFY(!data.empty());
@@ -357,16 +588,74 @@ void DirectoryTest::readNonSeekable() {
 
 void DirectoryTest::write() {
     constexpr unsigned char data[] = {0xCA, 0xFE, 0xBA, 0xBE, 0x0D, 0x0A, 0x00, 0xDE, 0xAD, 0xBE, 0xEF};
-    CORRADE_VERIFY(Directory::write(Directory::join(DIRECTORY_WRITE_TEST_DIR, "file"), data));
-    CORRADE_COMPARE_AS(Directory::join(DIRECTORY_WRITE_TEST_DIR, "file"),
-        Directory::join(DIRECTORY_TEST_DIR, "file"),
+    CORRADE_VERIFY(Directory::write(Directory::join(_writeTestDir, "file"), data));
+    CORRADE_COMPARE_AS(Directory::join(_writeTestDir, "file"),
+        Directory::join(_testDir, "file"),
         TestSuite::Compare::File);
 
-    CORRADE_VERIFY(Directory::writeString(Directory::join(DIRECTORY_WRITE_TEST_DIR, "file"),
+    CORRADE_VERIFY(Directory::writeString(Directory::join(_writeTestDir, "file"),
         std::string("\xCA\xFE\xBA\xBE\x0D\x0A\x00\xDE\xAD\xBE\xEF", 11)));
-    CORRADE_COMPARE_AS(Directory::join(DIRECTORY_WRITE_TEST_DIR, "file"),
-        Directory::join(DIRECTORY_TEST_DIR, "file"),
+    CORRADE_COMPARE_AS(Directory::join(_writeTestDir, "file"),
+        Directory::join(_testDir, "file"),
         TestSuite::Compare::File);
+}
+
+void DirectoryTest::map() {
+    #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT))
+    std::string data{"\xCA\xFE\xBA\xBE\x0D\x0A\x00\xDE\xAD\xBE\xEF", 11};
+    {
+        auto mappedFile = Directory::map(Directory::join(_writeTestDir, "mappedFile"), data.size());
+        CORRADE_VERIFY(mappedFile);
+        CORRADE_COMPARE(mappedFile.size(), data.size());
+        std::copy(std::begin(data), std::end(data), mappedFile.begin());
+    }
+    CORRADE_COMPARE_AS(Directory::join(_writeTestDir, "mappedFile"),
+        data,
+        TestSuite::Compare::FileToString);
+    #else
+    CORRADE_SKIP("Not implemented on this platform.");
+    #endif
+}
+
+void DirectoryTest::mapNoPermission() {
+    #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT))
+    {
+        std::ostringstream out;
+        Error err{&out};
+        auto mappedFile = Directory::map("/root/mappedFile", 64);
+        CORRADE_VERIFY(!mappedFile);
+        CORRADE_COMPARE(out.str(), "Utility::Directory::map(): can't open the file\n");
+    }
+    #else
+    CORRADE_SKIP("Not implemented on this platform.");
+    #endif
+}
+
+void DirectoryTest::mapRead() {
+    #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT))
+    {
+        const auto mappedFile = Directory::mapRead(Directory::join(_testDir, "file"));
+        CORRADE_COMPARE_AS(Containers::ArrayView<const char>(mappedFile),
+            (Containers::Array<char>::from(0xCA, 0xFE, 0xBA, 0xBE, 0x0D, 0x0A, 0x00, 0xDE, 0xAD, 0xBE, 0xEF)),
+            TestSuite::Compare::Container);
+    }
+    #else
+    CORRADE_SKIP("Not implemented on this platform.");
+    #endif
+}
+
+void DirectoryTest::mapReadNonexistent() {
+    #if defined(CORRADE_TARGET_UNIX) || (defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT))
+    {
+        std::ostringstream out;
+        Error err{&out};
+        const auto mappedFile = Directory::mapRead(Directory::join(_testDir, "nonexistentFile"));
+        CORRADE_VERIFY(!mappedFile);
+        CORRADE_COMPARE(out.str(), "Utility::Directory::mapRead(): can't open the file\n");
+    }
+    #else
+    CORRADE_SKIP("Not implemented on this platform.");
+    #endif
 }
 
 }}}

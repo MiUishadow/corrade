@@ -26,11 +26,11 @@
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/configure.h.cmake
                ${CMAKE_CURRENT_BINARY_DIR}/configure.h)
 
-if(NOT CORRADE_TARGET_NACL_NEWLIB AND NOT CORRADE_TARGET_EMSCRIPTEN)
+if(NOT CORRADE_TARGET_NACL_NEWLIB AND NOT CORRADE_TARGET_EMSCRIPTEN AND NOT CORRADE_TARGET_WINDOWS_RT AND NOT CORRADE_TARGET_IOS AND NOT CORRADE_TARGET_ANDROID)
     corrade_add_plugin(Snail ${CMAKE_CURRENT_BINARY_DIR} "" Snail.conf Snail.cpp)
     corrade_add_plugin(Dog ${CMAKE_CURRENT_BINARY_DIR} "" Dog.conf Dog.cpp)
     corrade_add_plugin(Bulldog ${CMAKE_CURRENT_BINARY_DIR} "" Bulldog.conf Bulldog.cpp)
-    corrade_add_plugin(Chihuahua ${CMAKE_CURRENT_BINARY_DIR} "" Chihuahua.conf Chihuahua.cpp)
+    corrade_add_plugin(PitBull ${CMAKE_CURRENT_BINARY_DIR} "" PitBull.conf PitBull.cpp)
 endif()
 corrade_add_static_plugin(Canary ${CMAKE_CURRENT_BINARY_DIR} Canary.conf Canary.cpp)
 
@@ -42,8 +42,10 @@ if(CORRADE_TARGET_WINDOWS)
     target_link_libraries(Snail CorradePluginManagerTestLib)
     target_link_libraries(Dog CorradePluginManagerTestLib)
     target_link_libraries(Bulldog CorradePluginManagerTestLib)
-    target_link_libraries(Chihuahua CorradePluginManagerTestLib Dog)
+    target_link_libraries(PitBull CorradePluginManagerTestLib Dog)
 endif()
 
-add_subdirectory(deletable)
-add_subdirectory(food)
+if(NOT CORRADE_TARGET_NACL_NEWLIB AND NOT CORRADE_TARGET_EMSCRIPTEN AND NOT CORRADE_TARGET_WINDOWS_RT AND NOT CORRADE_TARGET_IOS AND NOT CORRADE_TARGET_ANDROID)
+    add_subdirectory(deletable)
+    add_subdirectory(food)
+endif()

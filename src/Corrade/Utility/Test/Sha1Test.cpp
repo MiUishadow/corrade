@@ -23,6 +23,11 @@
     DEALINGS IN THE SOFTWARE.
 */
 
+#ifdef _MSC_VER
+#include <algorithm> /* std::min() */
+#endif
+
+#include "Corrade/Containers/Array.h"
 #include "Corrade/TestSuite/Tester.h"
 #include "Corrade/Utility/AbstractHash.h"
 #include "Corrade/Utility/Sha1.h"
@@ -36,6 +41,9 @@ struct Sha1Test: TestSuite::Tester {
     void exact64bytes();
     void exactOneBlockPadding();
     void twoBlockPadding();
+
+    void iterative();
+    void reuse();
 };
 
 Sha1Test::Sha1Test() {
@@ -43,6 +51,10 @@ Sha1Test::Sha1Test() {
               &Sha1Test::exact64bytes,
               &Sha1Test::exactOneBlockPadding,
               &Sha1Test::twoBlockPadding});
+
+    addRepeatedTests({&Sha1Test::iterative}, 128);
+
+    addTests({&Sha1Test::reuse});
 }
 
 void Sha1Test::emptyString() {
@@ -63,6 +75,42 @@ void Sha1Test::exactOneBlockPadding() {
 void Sha1Test::twoBlockPadding() {
     CORRADE_COMPARE(Sha1::digest("123456789a123456789b123456789c123456789d123456789e123456"),
                     Sha1::Digest::fromHexString("40e94c62ada5dc762f3e9c472001ca64a67d2cbb"));
+}
+
+namespace {
+    constexpr const char Data[] =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do "
+        "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim "
+        "ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut "
+        "aliquip ex ea commodo consequat. Duis aute irure dolor in "
+        "reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla "
+        "pariatur. Excepteur sint occaecat cupidatat non proident, sunt in "
+        "culpa qui officia deserunt mollit anim id est laborum.";
+
+    const Containers::ArrayView<const char> String{Data, sizeof(Data) - 1};
+}
+
+void Sha1Test::iterative() {
+    Sha1 hasher;
+    for(std::size_t offset = 0; offset < String.size(); offset += testCaseRepeatId() + 1) {
+        const auto slice = String.slice(offset, std::min(offset + testCaseRepeatId() + 1, String.size()));
+        hasher << std::string{slice.data(), slice.size()};
+    }
+
+    CORRADE_COMPARE(hasher.digest(), Sha1::Digest::fromHexString("cd36b370758a259b34845084a6cc38473cb95e27"));
+}
+
+void Sha1Test::reuse() {
+    Sha1 hasher;
+    hasher << std::string{String.data(), String.size()};
+    CORRADE_COMPARE(hasher.digest(), Sha1::Digest::fromHexString("cd36b370758a259b34845084a6cc38473cb95e27"));
+
+    /* Second time the hash equals to hash to empty string */
+    CORRADE_COMPARE(hasher.digest(), Sha1::Digest::fromHexString("da39a3ee5e6b4b0d3255bfef95601890afd80709"));
+
+    /* Filling again, it gives the same output */
+    hasher << std::string{String.data(), String.size()};
+    CORRADE_COMPARE(hasher.digest(), Sha1::Digest::fromHexString("cd36b370758a259b34845084a6cc38473cb95e27"));
 }
 
 }}}

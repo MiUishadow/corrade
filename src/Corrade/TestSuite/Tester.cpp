@@ -31,6 +31,7 @@
 #include <random>
 #include <sstream>
 #include <utility>
+#include <cstdlib>
 
 #include "Corrade/Containers/Array.h"
 #include "Corrade/Utility/Arguments.h"
@@ -78,7 +79,7 @@ namespace {
 
         if(max >= 1000000000)
             out << float(count)/(1000000000.0f*batchSize) << " G" << unit;
-        if(max >= 1000000)
+        else if(max >= 1000000)
             out << float(count)/(1000000.0f*batchSize) << " M" << unit;
         else if(max >= 1000)
             out << float(count)/(1000000.0f*batchSize) << " k" << unit;
@@ -101,7 +102,7 @@ namespace {
                 return formatCount(count, max, batchSize, "       ");
         }
 
-        CORRADE_ASSERT(false, "TestSuite::Tester: invalid benchmark unit", {});
+        CORRADE_ASSERT(false, "TestSuite::Tester: invalid benchmark unit", {}); /* LCOV_EXCL_LINE */
     }
 }
 
@@ -116,6 +117,10 @@ int Tester::exec(const int argc, const char** const argv, std::ostream* const lo
     args.addOption('c', "color", "auto").setHelp("color", "colored output", "on|off|auto")
             .setFromEnvironment("color", "CORRADE_TEST_COLOR")
         .addOption("skip").setHelp("skip", "skip test cases with given numbers", "\"N1 N2...\"")
+        .addBooleanOption("skip-tests").setHelp("skip-tests", "skip all tests")
+            .setFromEnvironment("skip-tests", "CORRADE_TEST_SKIP_TESTS")
+        .addBooleanOption("skip-benchmarks").setHelp("skip-benchmarks", "skip all benchmarks")
+            .setFromEnvironment("skip-benchmarks", "CORRADE_TEST_SKIP_BENCHMARKS")
         .addOption("only").setHelp("only", "run only test cases with given numbers", "\"N1 N2...\"")
         .addBooleanOption("shuffle").setHelp("shuffle", "randomly shuffle test case order")
             .setFromEnvironment("shuffle", "CORRADE_TEST_SHUFFLE")
@@ -123,6 +128,10 @@ int Tester::exec(const int argc, const char** const argv, std::ostream* const lo
             .setFromEnvironment("repeat-every", "CORRADE_TEST_REPEAT_EVERY")
         .addOption("repeat-all", "1").setHelp("repeat-all", "repeat all test cases N times", "N")
             .setFromEnvironment("repeat-all", "CORRADE_TEST_REPEAT_ALL")
+        .addBooleanOption("abort-on-fail").setHelp("abort after first failure")
+            .setFromEnvironment("abort-on-fail", "CORRADE_TEST_ABORT_ON_FAIL")
+        .addBooleanOption("no-xfail").setHelp("no-xfail", "disallow expected failures")
+            .setFromEnvironment("no-xfail", "CORRADE_TEST_NO_XFAIL")
         .addOption("benchmark", "wall-clock").setHelp("benchmark", "default benchmark type", "TYPE")
         .setHelp(R"(Corrade TestSuite executable. By default runs test cases in order in which they
 were added and exits with non-zero code if any of them failed. Supported
@@ -138,8 +147,22 @@ benchmark types:
         _useColor = Debug::Flags{};
     else if(args.value("color") == "off" || args.value("color") == "OFF")
         _useColor = Debug::Flag::DisableColors;
-    #if (!defined(CORRADE_TARGET_WINDOWS) || defined(CORRADE_UTILITY_USE_ANSI_COLORS)) && !defined(CORRADE_TARGET_ANDROID)
-    else _useColor = logOutput == &std::cout && errorOutput == &std::cerr && isatty(1) && isatty(2)
+    /* The autodetection is done in Debug class on Windows with WINAPI colors */
+    #if defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_UTILITY_USE_ANSI_COLORS)
+    else _useColor = Debug::Flags{};
+    /* We can autodetect via isatty() on Unix-like systems and Windows with
+       ANSI colors enabled */
+    #elif !defined(CORRADE_TARGET_EMSCRIPTEN)
+    else _useColor = logOutput == &std::cout &&
+        /* Windows RT projects have C4996 treated as error by default. WHY */
+        #ifdef _MSC_VER
+        #pragma warning(push)
+        #pragma warning(disable: 4996)
+        #endif
+        errorOutput == &std::cerr && isatty(1) && isatty(2)
+        #ifdef _MSC_VER
+        #pragma warning(pop)
+        #endif
         #ifdef CORRADE_TARGET_APPLE
         /* Xcode's console reports that it is a TTY, but it doesn't support
            colors. We have to check for the following undocumented environment
@@ -147,6 +170,9 @@ benchmark types:
         && !std::getenv("XPC_SERVICE_NAME")
         #endif
         ? Debug::Flags{} : Debug::Flag::DisableColors;
+    /* Otherwise can't be autodetected, thus disable by default */
+    #else
+    else _useColor = Debug::Flag::DisableColors;
     #endif
 
     /* Decide about default benchmark type */
@@ -157,11 +183,28 @@ benchmark types:
 
     std::vector<std::pair<int, TestCase>> usedTestCases;
 
+    /* Disable expected failures, if requested */
+    _expectedFailuresDisabled = args.isSet("no-xfail");
+
+    /* Skip test cases, if requested */
+    if(args.isSet("skip-tests"))
+        for(TestCase& testCase: _testCases)
+            if(testCase.type == TestCaseType::Test) testCase.test = nullptr;
+
+    /* Skip benchmarks, if requested */
+    if(args.isSet("skip-benchmarks"))
+        for(TestCase& testCase: _testCases)
+            if(testCase.type != TestCaseType::Test) testCase.test = nullptr;
+
     /* Remove skipped test cases */
     if(!args.value("skip").empty()) {
         const std::vector<std::string> skip = Utility::String::split(args.value("skip"), ' ');
         for(auto&& n: skip) {
-            std::size_t index = std::stoi(n);
+            #ifndef CORRADE_TARGET_ANDROID
+            const std::size_t index = std::stoi(n);
+            #else
+            const std::size_t index = std::strtoul(n.data(), nullptr, 10);
+            #endif
             if(index - 1 >= _testCases.size()) continue;
             _testCases[index - 1].test = nullptr;
         }
@@ -171,7 +214,11 @@ benchmark types:
     if(!args.value("only").empty()) {
         const std::vector<std::string> only = Utility::String::split(args.value("only"), ' ');
         for(auto&& n: only) {
-            std::size_t index = std::stoi(n);
+            #ifndef CORRADE_TARGET_ANDROID
+            const std::size_t index = std::stoi(n);
+            #else
+            const std::size_t index = std::strtoul(n.data(), nullptr, 10);
+            #endif
             if(index - 1 >= _testCases.size() || !_testCases[index - 1].test) continue;
             usedTestCases.emplace_back(index, _testCases[index - 1]);
         }
@@ -200,9 +247,25 @@ benchmark types:
     unsigned int errorCount = 0,
         noCheckCount = 0;
 
-    /* Fail when we have nothing to test */
+    /* Nothing to test */
     if(usedTestCases.empty()) {
-        Error(errorOutput, _useColor) << Debug::boldColor(Debug::Color::Red) << "No tests to run in" << _testName << Debug::nospace << "!";
+        /* Not an error if we're skipping either tests or benchmarks (but not
+           both) */
+        if(args.isSet("skip-tests") && !args.isSet("skip-benchmarks")) {
+            Debug(logOutput, _useColor)
+                << Debug::boldColor(Debug::Color::Default) << "No remaining benchmarks to run in"
+                << _testName << Debug::nospace << ".";
+            return 0;
+        }
+
+        if(!args.isSet("skip-tests") && args.isSet("skip-benchmarks")) {
+            Debug(logOutput, _useColor)
+                << Debug::boldColor(Debug::Color::Default) << "No remaining tests to run in"
+                << _testName << Debug::nospace << ".";
+            return 0;
+        }
+
+        Error(errorOutput, _useColor) << Debug::boldColor(Debug::Color::Red) << "No test cases to run in" << _testName << Debug::nospace << "!";
         return 2;
     }
 
@@ -224,7 +287,7 @@ benchmark types:
         BenchmarkUnits benchmarkUnits = BenchmarkUnits::Count;
         switch(testCase.second.type) {
             case TestCaseType::DefaultBenchmark:
-                CORRADE_ASSERT_UNREACHABLE();
+                CORRADE_ASSERT_UNREACHABLE(); /* LCOV_EXCL_LINE */
 
             case TestCaseType::Test:
                 break;
@@ -248,7 +311,17 @@ benchmark types:
 
         _testCaseId = testCase.first;
         _testCaseInstanceId = testCase.second.instanceId;
-        _testCaseDescription = testCase.second.instanceId == ~std::size_t{} ? std::string{} : std::to_string(testCase.second.instanceId);
+        if(testCase.second.instanceId == ~std::size_t{})
+            _testCaseDescription = {};
+        else {
+            #ifndef CORRADE_TARGET_ANDROID
+            _testCaseDescription = std::to_string(testCase.second.instanceId);
+            #else
+            std::ostringstream out;
+            out << testCase.second.instanceId;
+            _testCaseDescription = out.str();
+            #endif
+        }
 
         /* Final combined repeat count */
         const std::size_t repeatCount = testCase.second.repeatCount*repeatEveryCount;
@@ -262,7 +335,7 @@ benchmark types:
                 (this->*testCase.second.setup)();
 
             /* Print the repeat ID only if we are repeating */
-            _testCaseRepeatId = repeatCount == 1 ? 0 : i + 1;
+            _testCaseRepeatId = repeatCount == 1 ? ~std::size_t{} : i;
             _testCaseLine = 0;
             _testCaseName.clear();
             _testCase = &testCase.second;
@@ -324,6 +397,19 @@ benchmark types:
                     << Debug::boldColor(Debug::Color::Default) << "Avg:"
                     << Debug::resetColor << formatMeasurement(avg, max, benchmarkUnits, _benchmarkBatchSize);
             }
+
+        /* Abort on first failure */
+        } else if(args.isSet("abort-on-fail")) {
+            Debug out{logOutput, _useColor};
+            out << Debug::boldColor(Debug::Color::Red) << "Aborted"
+                << Debug::boldColor(Debug::Color::Default) << _testName
+                << Debug::boldColor(Debug::Color::Red) << "after first failure"
+                << Debug::boldColor(Debug::Color::Default) << "out of"
+                << _checkCount << "checks so far.";
+            if(noCheckCount)
+                out << Debug::boldColor(Debug::Color::Yellow) << noCheckCount << "test cases didn't contain any checks!";
+
+            return 1;
         }
     }
 
@@ -360,8 +446,8 @@ void Tester::printTestCaseLabel(Debug& out, const char* const status, const Debu
             << ")";
     } else out << "()";
 
-    if(_testCaseRepeatId)
-        out << Debug::nospace << "@" << Debug::nospace << _testCaseRepeatId;
+    if(_testCaseRepeatId != ~std::size_t{})
+        out << Debug::nospace << "@" << Debug::nospace << _testCaseRepeatId + 1;
 
     out << Debug::resetColor;
 }
@@ -456,7 +542,7 @@ std::uint64_t Tester::wallClockBenchmarkEnd() {
 Tester::TesterConfiguration::TesterConfiguration() = default;
 
 Tester::ExpectedFailure::ExpectedFailure(Tester& instance, std::string message, const bool enabled): _instance(instance), _message(std::move(message)) {
-    if(enabled) _instance._expectedFailure = this;
+    if(enabled && !instance._expectedFailuresDisabled) _instance._expectedFailure = this;
 }
 
 Tester::ExpectedFailure::~ExpectedFailure() {

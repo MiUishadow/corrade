@@ -7,15 +7,15 @@ Corrade is multiplatform utility library written in C++11/C++14.
 SUPPORTED PLATFORMS
 ===================
 
-*   **Linux** and embedded Linux [![Build Status](https://travis-ci.org/mosra/corrade.svg?branch=master)](https://travis-ci.org/mosra/corrade)
+*   **Linux** and embedded Linux [![Build Status](https://travis-ci.org/mosra/corrade.svg?branch=master)](https://travis-ci.org/mosra/corrade) [![Coverage Status](https://coveralls.io/repos/github/mosra/corrade/badge.svg?branch=master)](https://coveralls.io/github/mosra/corrade?branch=master)
 *   **Windows** [![Build Status](https://ci.appveyor.com/api/projects/status/afjjlsgtk6jjxulp/branch/master?svg=true)](https://ci.appveyor.com/project/mosra/corrade/branch/master)
 *   **OS X** [![Build Status](https://travis-ci.org/mosra/corrade.svg?branch=master)](https://travis-ci.org/mosra/corrade)
-*   **iOS**
+*   **iOS** [![Build Status](https://travis-ci.org/mosra/corrade.svg?branch=master)](https://travis-ci.org/mosra/corrade)
 *   **Android** 1.5 (API Level 3) and higher
-*   **Windows RT** (Store/Phone)
+*   **Windows RT** (Store/Phone) [![Build Status](https://ci.appveyor.com/api/projects/status/afjjlsgtk6jjxulp/branch/master?svg=true)](https://ci.appveyor.com/project/mosra/corrade/branch/master)
 *   **Google Chrome** (through [Native Client](https://developers.google.com/native-client/),
     both `newlib` and `glibc` toolchains are supported)
-*   **HTML5/JavaScript** (through [Emscripten](https://github.com/kripken/emscripten/wiki))
+*   **HTML5/JavaScript** (through [Emscripten](https://github.com/kripken/emscripten/wiki)) [![Build Status](https://travis-ci.org/mosra/corrade.svg?branch=master)](https://travis-ci.org/mosra/corrade)
 
 FEATURES
 ========
@@ -39,12 +39,10 @@ crosscompiling.
 Minimal dependencies
 --------------------
 
--   C++ compiler with good C++11 support. Compilers which are tested to have
-    everything needed are **GCC** >= 4.7, **Clang** >= 3.1 and **MSVC** 2015.
-    On Windows you can also use **MinGW-w64**. GCC 4.6, 4.5, 4.4 and MSVC 2013
-    support involves some ugly workarounds and thus is available only in
-    `compatibility` branch.
--   **CMake** >= 2.8.12
+*   C++ compiler with good C++11 support. Compilers which are tested to have
+    everything needed are **GCC** >= 4.7, **Clang** >= 3.1 and **MSVC** >=
+    2015. On Windows you can also use **MinGW-w64**.
+*   **CMake** >= 2.8.12
 
 Note that full feature set is available only on GCC >= 4.8.1 and Clang >= 3.1
 and compatibility mode with reduced feature set must be enabled for other
@@ -86,13 +84,13 @@ will be in `build/doc/` directory.
 Building examples
 -----------------
 
-The library comes with handful of examples, contained in `examples/`
+The library comes with handful of examples, contained in `src/examples/`
 directory. Each example is thoroughly explained in documentation. The examples
 require Corrade to be installed and they are built separately:
 
     mkdir -p build-examples
     cd build-examples
-    cmake ../examples
+    cmake ../src/examples
     make
 
 CONTACT

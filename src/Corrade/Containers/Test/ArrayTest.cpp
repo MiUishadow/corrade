@@ -60,8 +60,10 @@ struct ArrayTest: TestSuite::Tester {
     void sliceToStatic();
     void release();
 
+    void defaultDeleter();
     void customDeleter();
     void customDeleterType();
+    void customDeleterTypeConstruct();
 };
 
 typedef Containers::Array<int> Array;
@@ -99,8 +101,10 @@ ArrayTest::ArrayTest() {
               &ArrayTest::sliceToStatic,
               &ArrayTest::release,
 
+              &ArrayTest::defaultDeleter,
               &ArrayTest::customDeleter,
-              &ArrayTest::customDeleterType});
+              &ArrayTest::customDeleterType,
+              &ArrayTest::customDeleterTypeConstruct});
 }
 
 void ArrayTest::constructEmpty() {
@@ -289,13 +293,21 @@ void ArrayTest::convertPointer() {
 void ArrayTest::convertView() {
     Array a(5);
     const Array ca(5);
+    Containers::Array<const int> ac{a.data(), a.size(), [](const int*, std::size_t){}};
+    const Containers::Array<const int> cac{a.data(), a.size(), [](const int*, std::size_t){}};
 
     const ArrayView b = a;
     const ConstArrayView cb = ca;
+    const ConstArrayView bc = ac;
+    const ConstArrayView cbc = cac;
     CORRADE_VERIFY(b.begin() == a.begin());
+    CORRADE_VERIFY(bc.begin() == ac.begin());
     CORRADE_VERIFY(cb.begin() == ca.begin());
+    CORRADE_VERIFY(cbc.begin() == cac.begin());
     CORRADE_COMPARE(b.size(), 5);
     CORRADE_COMPARE(cb.size(), 5);
+    CORRADE_COMPARE(bc.size(), 5);
+    CORRADE_COMPARE(cbc.size(), 5);
 }
 
 void ArrayTest::convertViewDerived() {
@@ -437,6 +449,11 @@ void ArrayTest::release() {
     CORRADE_COMPARE(a.size(), 0);
 }
 
+void ArrayTest::defaultDeleter() {
+    Array a{5};
+    CORRADE_COMPARE(a.deleter(), nullptr);
+}
+
 namespace {
     int CustomDeleterDeletedCount = 0;
 }
@@ -474,6 +491,19 @@ void ArrayTest::customDeleterType() {
     }
 
     CORRADE_COMPARE(deletedCount, 25);
+}
+
+void ArrayTest::customDeleterTypeConstruct() {
+    struct CustomImplicitDeleter {
+        void operator()(int*, std::size_t) {}
+    };
+
+    /* Just verify that this compiles */
+    Containers::Array<int, CustomImplicitDeleter> a;
+    Containers::Array<int, CustomImplicitDeleter> b{nullptr};
+    int c;
+    Containers::Array<int, CustomImplicitDeleter> d{&c, 1};
+    CORRADE_VERIFY(true);
 }
 
 }}}

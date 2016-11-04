@@ -34,6 +34,8 @@ namespace Corrade { namespace Utility { namespace Test {
 struct ArgumentsTest: TestSuite::Tester {
     explicit ArgumentsTest();
 
+    void environment();
+
     void helpArgumentsOnly();
     void helpNamedOnly();
     void helpBoth();
@@ -60,13 +62,17 @@ struct ArgumentsTest: TestSuite::Tester {
     void parseUnknownShortArgument();
     void parseSuperfluousArgument();
     void parseArgumentAfterSeparator();
+    void parseInvalidShortArgument();
     void parseInvalidLongArgument();
+    void parseInvalidLongArgumentDashes();
 
     void parseMissingValue();
     void parseMissingOption();
     void parseMissingArgument();
 
     void prefixedParse();
+    void prefixedParseMinus();
+    void prefixedParseMinusMinus();
     void prefixedParseHelpArgument();
     void prefixedHelpWithoutPrefix();
     void prefixedHelpWithPrefix();
@@ -77,7 +83,9 @@ struct ArgumentsTest: TestSuite::Tester {
 };
 
 ArgumentsTest::ArgumentsTest() {
-    addTests({&ArgumentsTest::helpArgumentsOnly,
+    addTests({&ArgumentsTest::environment,
+
+              &ArgumentsTest::helpArgumentsOnly,
               &ArgumentsTest::helpNamedOnly,
               &ArgumentsTest::helpBoth,
               &ArgumentsTest::helpText,
@@ -103,13 +111,17 @@ ArgumentsTest::ArgumentsTest() {
               &ArgumentsTest::parseUnknownShortArgument,
               &ArgumentsTest::parseSuperfluousArgument,
               &ArgumentsTest::parseArgumentAfterSeparator,
+              &ArgumentsTest::parseInvalidShortArgument,
               &ArgumentsTest::parseInvalidLongArgument,
+              &ArgumentsTest::parseInvalidLongArgumentDashes,
 
               &ArgumentsTest::parseMissingValue,
               &ArgumentsTest::parseMissingOption,
               &ArgumentsTest::parseMissingArgument,
 
               &ArgumentsTest::prefixedParse,
+              &ArgumentsTest::prefixedParseMinus,
+              &ArgumentsTest::prefixedParseMinusMinus,
               &ArgumentsTest::prefixedParseHelpArgument,
               &ArgumentsTest::prefixedHelpWithoutPrefix,
               &ArgumentsTest::prefixedHelpWithPrefix,
@@ -117,6 +129,20 @@ ArgumentsTest::ArgumentsTest() {
               &ArgumentsTest::prefixedDisallowedWithPrefix,
               &ArgumentsTest::prefixedDisallowedWithPrefixAfterSkipPrefix,
               &ArgumentsTest::prefixedUnknownWithPrefix});
+}
+
+void ArgumentsTest::environment() {
+    #ifdef CORRADE_TARGET_WINDOWS_RT
+    CORRADE_SKIP("No environment on this platform.");
+    #endif
+
+    /* Verify that it doesn't crash, at least */
+    std::vector<std::string> list = Arguments::environment();
+    if(!list.empty()) Debug()
+        << "Environment variables found:" << list.size() << Debug::newline
+        << "One environment variable:" << list[list.size()/2];
+
+    CORRADE_VERIFY(!list.empty());
 }
 
 void ArgumentsTest::helpArgumentsOnly() {
@@ -430,7 +456,31 @@ void ArgumentsTest::parseArgumentAfterSeparator() {
     CORRADE_COMPARE(out.str(), "Superfluous command-line argument -b\n");
 }
 
+void ArgumentsTest::parseInvalidShortArgument() {
+    Arguments args;
+
+    const char* argv[] = { "", "-?" };
+    const int argc = std::extent<decltype(argv)>();
+
+    std::ostringstream out;
+    Error redirectError{&out};
+    CORRADE_VERIFY(!args.tryParse(argc, argv));
+    CORRADE_COMPARE(out.str(), "Invalid command-line argument -?\n");
+}
+
 void ArgumentsTest::parseInvalidLongArgument() {
+    Arguments args;
+
+    const char* argv[] = { "", "--?" };
+    const int argc = std::extent<decltype(argv)>();
+
+    std::ostringstream out;
+    Error redirectError{&out};
+    CORRADE_VERIFY(!args.tryParse(argc, argv));
+    CORRADE_COMPARE(out.str(), "Invalid command-line argument --?\n");
+}
+
+void ArgumentsTest::parseInvalidLongArgumentDashes() {
     Arguments args;
 
     const char* argv[] = { "", "-long-argument" };
@@ -503,6 +553,44 @@ void ArgumentsTest::prefixedParse() {
     CORRADE_VERIFY(arg2.tryParse(argc, argv));
     CORRADE_COMPARE(arg2.value("behavior"), "buffered");
     CORRADE_COMPARE(arg2.value("buffer-size"), "4K");
+}
+
+void ArgumentsTest::prefixedParseMinus() {
+    Arguments arg1;
+    arg1.addNamedArgument("offset")
+        .addSkippedPrefix("read");
+
+    Arguments arg2{"read"};
+    arg2.addOption("behavior")
+        .addOption("buffer-size");
+
+    const char* argv[] = { "", "--read-behavior", "buffered", "--offset", "-50" };
+    const int argc = std::extent<decltype(argv)>();
+
+    CORRADE_VERIFY(arg1.tryParse(argc, argv));
+    CORRADE_COMPARE(arg1.value("offset"), "-50");
+
+    CORRADE_VERIFY(arg2.tryParse(argc, argv));
+    CORRADE_COMPARE(arg2.value("behavior"), "buffered");
+}
+
+void ArgumentsTest::prefixedParseMinusMinus() {
+    Arguments arg1;
+    arg1.addNamedArgument("offset")
+        .addSkippedPrefix("read");
+
+    Arguments arg2{"read"};
+    arg2.addOption("behavior")
+        .addOption("buffer-size");
+
+    const char* argv[] = { "", "--read-behavior", "buffered", "--offset", "--50" };
+    const int argc = std::extent<decltype(argv)>();
+
+    CORRADE_VERIFY(arg1.tryParse(argc, argv));
+    CORRADE_COMPARE(arg1.value("offset"), "--50");
+
+    CORRADE_VERIFY(arg2.tryParse(argc, argv));
+    CORRADE_COMPARE(arg2.value("behavior"), "buffered");
 }
 
 void ArgumentsTest::prefixedParseHelpArgument() {

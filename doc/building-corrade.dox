@@ -33,10 +33,8 @@ namespace Corrade {
 Minimal set of tools required for building is:
 
 -   C++ compiler with good C++11 support. Compilers which are tested to have
-    everything needed are **GCC** >= 4.7, **Clang** >= 3.1 and **MSVC** 2015.
-    On Windows you can also use **MinGW-w64**. GCC 4.6, 4.5, 4.4 and MSVC 2013
-    support involves some ugly workarounds and thus is available only in
-    `compatibility` branch.
+    everything needed are **GCC** >= 4.7, **Clang** >= 3.1 and **MSVC** >=
+    2015. On Windows you can also use **MinGW-w64**.
 -   **CMake** >= 2.8.12
 
 Note that full feature set is available only on GCC >= 4.8.1 and Clang >= 3.1
@@ -49,12 +47,6 @@ repository with your favorite IDE or Git GUI, download currrent snapshot as
 compressed archive or use the command line:
 
     git clone git://github.com/mosra/corrade.git
-
-If you need to use the `compatibility` branch, check it out as following from
-the cloned repository or download the particular archive from
-https://github.com/mosra/corrade/tree/compatibility.
-
-    git checkout compatibility
 
 @section building-corrade-compilation Compilation, installation
 
@@ -197,15 +189,8 @@ the compatibility mode explicitly:
 - `GCC47_COMPATIBILITY` -- Enable for compiling with compatibility mode for GCC
   4.7. Note that you need to enable this explicitly also if you are building
   with Clang and use libstdc++ from GCC 4.7.
-- `GCC46_COMPATIBILITY` -- Enable for compiling with compatibility mode for GCC
-  4.6. Note that GCC 4.6 support is maintained only in `compatibility` branch.
-- `GCC45_COMPATIBILITY` -- Enable for compiling with compatibility mode for GCC
-  4.5. Note that GCC 4.5 support is maintained only in `compatibility` branch.
-- `GCC44_COMPATIBILITY` -- Enable for compiling with compatibility mode for GCC
-  4.4. Note that GCC 4.4 support is maintained only in `compatibility` branch.
-- `MSVC2013_COMPATIBILITY` -- Enable for compiling with compatibility more for
-  Microsoft Visual C++ 2013. Note that MSVC 2013 support is maintained only in
-  `compatibility` branch.
+- `MSVC2015_COMPATIBILITY` -- Enable for compiling with compatibility mode for
+  Microsoft Visual C++ 2015.
 
 Corrade will detect the compiler used and refuses to build (or be used) if
 some compatibility mode needs to be enabled. On the other hand, if any of these
@@ -217,8 +202,28 @@ Corrade is by default built with all deprecated APIs. However, to make your
 code more robust and future-proof, it's recommended to build the library with
 `BUILD_DEPRECATED` disabled.
 
+By default the library is built with everything. Using `WITH_*` CMake
+parameters you can specify which parts will be built and which not:
+
+-   `WITH_INTERCONNECT` -- @ref Interconnect library. Enables also building of
+    Utility library.
+-   `WITH_PLUGINMANAGER` -- @ref PluginManager library. Enables also building
+    of Utility library.
+-   `WITH_TESTSUITE` -- @ref TestSuite library. Enables also building of
+    Utility library.
+-   `WITH_UTILITY` -- @ref Utility library. Enabled automatically if
+    `WITH_INTERCONNECT`, `WITH_PLUGINMANAGER` or `WITH_TESTSUITE` is enabled.
+    The @ref Containers library and `corrade-rc` executable is built along with
+    this library.
+
 Platform-specific options:
 
+-   `UTILITY_USE_ANSI_COLORS` -- if building for Windows, this will use ANSI
+    escape codes in @ref Utility::Debug instead of WINAPI functions. Note that
+    you need at least Windows 10 or non-standard console emulator to display
+    them properly. Note that when compiling for
+    @ref CORRADE_TARGET_WINDOWS_RT "Windows RT" this option is implicitly
+    enabled, because the WINAPI functions are not available for this target.
 -   `TESTSUITE_TARGET_XCTEST` -- if building for Xcode on OSX or iOS, this will
     make the @ref TestSuite tests compatible with the XCTest framework and thus
     runnable directly from Xcode and also directly on iOS.
@@ -258,12 +263,12 @@ if it doesn't exist yet.
 
 @subsection building-corrade-examples Building examples
 
-The library comes with handful of examples, contained in `examples/`
+The library comes with handful of examples, contained in `src/examples/`
 directory. Documentation for them is available on page @ref corrade-example-index.
 The examples require Corrade to be installed and they are built separately:
 
     mkdir build-examples && cd build-examples
-    cmake ../examples
+    cmake ../src/examples
     cmake --build .
 
 @section building-corrade-packages Prepared packages
@@ -409,9 +414,7 @@ adapt `NACL_PREFIX` variable in `generic/NaCl-*-x86-32.cmake` and
 to find the compiler.
 
 Then create build directories for x86-32 and x86-64 and run cmake and build
-command in them. The toolchains need access to the platform file, so be sure to
-properly set **absolute** path to `modules/` directory containing
-`Platform/NaCl.cmake`. Also adapt `CMAKE_INSTALL_PREFIX` to the same value as
+command in them. Be sure to adapt `CMAKE_INSTALL_PREFIX` to the same value as
 in `NACL_PREFIX` in toolchain file.
 
     mkdir build-nacl-x86-32 && cd build-nacl-x86-32
@@ -447,10 +450,8 @@ to path where Emscripten is installed. Default is `/usr/lib/emscripten`.
 Emscripten supports dynamic libraries only to simplify porting and they are
 generally slower, thus `BUILD_STATIC` is implicitly enabled.
 
-Then create build directory and run cmake and build command in it. The
-toolchain needs access to its platform file, so be sure to properly set **absolute**
-path to `modules/` directory containing `Platform/Emscripten.cmake`. Also set
-`CMAKE_INSTALL_PREFIX` to path contained in `EMSCRIPTEN_TOOLCHAIN_PATH`.
+Then create build directory and run cmake and build command in it. Be sure to
+set `CMAKE_INSTALL_PREFIX` to path contained in `EMSCRIPTEN_TOOLCHAIN_PATH`.
 
     mkdir build-emscripten && cd build-emscripten
     cmake .. \
@@ -474,10 +475,8 @@ for more information.
 You will need OSX and Xcode installed.
 
 Set `CMAKE_OSX_ROOT` to SDK you want to target and enable all desired
-architectures in `CMAKE_OSX_ARCHITECTURES`. The toolchain needs access to its
-platform file, so be sure to properly set **absolute** path to `modules/`
-directory containing `Platform/iOS.cmake`. Set `CMAKE_INSTALL_PREFIX` to prefix
-where you want to store your iOS dependencies for other projects.
+architectures in `CMAKE_OSX_ARCHITECTURES`. Set `CMAKE_INSTALL_PREFIX` to
+prefix where you want to store your iOS dependencies for other projects.
 
 As every application is in its own sandbox, it doesn't make sense to build
 shared libraries (although it is supported). Enable `BUILD_STATIC` to build
@@ -505,10 +504,8 @@ where NDK is installed. Default is `/opt/android-ndk`. Adapt also
 `ANDROID_SYSROOT` to your preferred API level. You might also need to update
 `ANDROID_TOOLCHAIN_PREFIX` and `ANDROID_TOOLCHAIN_ROOT` to fit your system.
 
-Then create build directory and run cmake and build command in it. The
-toolchain needs access to its platform file, so be sure to properly set **absolute**
-path to `modules/` directory containing `Platform/Android.cmake`. Also set
-`CMAKE_INSTALL_PREFIX` to `/usr` subdirectory of `ANDROID_SYSROOT`.
+Then create build directory and run cmake and build command in it. Be sure to
+set `CMAKE_INSTALL_PREFIX` to `/usr` subdirectory of `ANDROID_SYSROOT`.
 
 Note that `BUILD_STATIC` is implicitly enabled, because manually loading all
 depending shared libraries using JNI would be too inconvenient.
@@ -538,13 +535,15 @@ named `PKGBUILD-android-arm` and `PKGBUILD-android-x86`, see
 
 @subsection building-corrade-ci-travis Travis
 
-In `package/ci/` there is `travis.yml` file with Linux GCC 4.7 and OSX Clang
-configuration. Online at https://travis-ci.org/mosra/corrade.
+In `package/ci/` there is `travis.yml` file with Linux GCC 4.7, OSX Clang, iOS
+and Emscripten configuration. Online at https://travis-ci.org/mosra/corrade.
+The Linux build has code coverage reports available online at
+https://coveralls.io/github/mosra/corrade.
 
 @subsection building-corrade-ci-appveyor AppVeyor
 
-In `package/ci/` there is `appveyor.yml` file with Windows MSVC configuration.
-Online at https://ci.appveyor.com/project/mosra/corrade.
+In `package/ci/` there is `appveyor.yml` file with Windows desktop MSVC, MinGW
+and Windows RT configuration. Online at https://ci.appveyor.com/project/mosra/corrade.
 
 @subsection building-corrade-ci-jenkins Jenkins
 

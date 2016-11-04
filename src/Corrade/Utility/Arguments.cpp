@@ -36,6 +36,17 @@
 #include "Corrade/Utility/Assert.h"
 #include "Corrade/Utility/Debug.h"
 
+/* For Arguments::environment() */
+#if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
+#include <cstdio>
+extern char **environ;
+#ifdef CORRADE_TARGET_EMSCRIPTEN
+#include <emscripten.h>
+#endif
+#elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+#include <windows.h>
+#endif
+
 namespace Corrade { namespace Utility {
 
 namespace {
@@ -63,7 +74,10 @@ struct Arguments::Entry {
 
     Type type;
     char shortKey;
-    std::string key, help, helpKey, defaultValue, environment;
+    std::string key, help, helpKey, defaultValue;
+    #ifndef CORRADE_TARGET_WINDOWS_RT
+    std::string environment;
+    #endif
     std::size_t id;
 };
 
@@ -73,6 +87,54 @@ Arguments::Entry::Entry(Type type, char shortKey, std::string key, std::string h
     else this->helpKey = std::move(helpKey);
 
     CORRADE_INTERNAL_ASSERT(type == Type::Option || this->defaultValue.empty());
+}
+
+std::vector<std::string> Arguments::environment() {
+    std::vector<std::string> list;
+
+    /* Standard Unix and local Emscripten environment */
+    #if defined(CORRADE_TARGET_UNIX) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    for(char** e = environ; *e; ++e)
+        list.push_back(*e);
+
+    /* System environment provided by Node.js. Hopefully nobody uses \b in
+       environment variables. (Can't use \0 because Emscripten chokes on it.) */
+    #ifdef CORRADE_TARGET_EMSCRIPTEN
+    #ifdef __clang__
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Winvalid-pp-token"
+    #endif
+    char* const env = reinterpret_cast<char*>(EM_ASM_INT_V({
+        var env = '';
+        if(typeof process !== 'undefined') for(var key in process.env)
+            env += key + '=' + process.env[key] + '\b';
+        env += '\b';
+        return allocate(intArrayFromString(env), 'i8', ALLOC_NORMAL);
+    }));
+    #ifdef __clang__
+    #pragma GCC diagnostic pop
+    #endif
+    char* e = env;
+    while(*e != '\b') {
+        char* end = std::strchr(e, '\b');
+        list.push_back({e, std::size_t(end - e)});
+        e = end + 1;
+    }
+    std::free(env);
+    #endif
+
+    /* Windows (not RT) */
+    #elif defined(CORRADE_TARGET_WINDOWS) && !defined(CORRADE_TARGET_WINDOWS_RT)
+    char* const env = GetEnvironmentStrings();
+    for(char* e = env; *e; e += std::strlen(e) + 1)
+        list.push_back(e);
+    FreeEnvironmentStrings(env);
+
+    /* Other platforms not implemented */
+    #else
+    #endif
+
+    return list;
 }
 
 Arguments::Arguments(std::string prefix): _prefix{prefix + '-'} {
@@ -195,6 +257,7 @@ Arguments& Arguments::addSkippedPrefix(std::string prefix, std::string help) {
     return *this;
 }
 
+#ifndef CORRADE_TARGET_WINDOWS_RT
 Arguments& Arguments::setFromEnvironment(const std::string& key, std::string environmentVariable) {
     auto found = find(_prefix + key);
     CORRADE_ASSERT(found != _entries.end(), "Utility::Arguments::setFromEnvironment(): key" << key << "doesn't exist", *this);
@@ -208,6 +271,7 @@ Arguments& Arguments::setFromEnvironment(const std::string& key, std::string env
 Arguments& Arguments::setFromEnvironment(const std::string& key) {
     return setFromEnvironment(key, uppercaseKey(_prefix + key));
 }
+#endif
 
 Arguments& Arguments::setCommand(std::string name) {
     _command = std::move(name);
@@ -276,20 +340,56 @@ bool Arguments::tryParse(const int argc, const char** const argv) {
     }
 
     /* Get options from environment */
+    #ifndef CORRADE_TARGET_WINDOWS_RT
     for(const Entry& entry: _entries) {
         if(entry.environment.empty()) continue;
 
         const char* const env = std::getenv(entry.environment.data());
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        #ifdef __clang__
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
+        #endif
+        char* const systemEnv = reinterpret_cast<char*>(EM_ASM_INT({
+            var name = UTF8ToString($0);
+            return typeof process !== 'undefined' && name in process.env ? allocate(intArrayFromString(process.env[name]), 'i8', ALLOC_NORMAL) : 0;
+        }, entry.environment.data()));
+        #ifdef __clang__
+        #pragma GCC diagnostic pop
+        #endif
+        #endif
+
+        #ifndef CORRADE_TARGET_EMSCRIPTEN
         if(!env) continue;
+        #else
+        if(!env && !systemEnv) continue;
+        #endif
 
         if(entry.type == Type::BooleanOption) {
             CORRADE_INTERNAL_ASSERT(entry.id < _booleans.size());
-            _booleans[entry.id] = env;
+            _booleans[entry.id] =
+                #ifndef CORRADE_TARGET_EMSCRIPTEN
+                env
+                #else
+                env ? env : systemEnv;
+                #endif
+                ;
         } else {
             CORRADE_INTERNAL_ASSERT(entry.id < _values.size());
-            _values[entry.id] = env;
+            _values[entry.id] =
+                #ifndef CORRADE_TARGET_EMSCRIPTEN
+                env
+                #else
+                env ? env : systemEnv;
+                #endif
+                ;
         }
+
+        #ifdef CORRADE_TARGET_EMSCRIPTEN
+        std::free(systemEnv);
+        #endif
     }
+    #endif
 
     std::vector<Entry>::iterator valueFor = _entries.end();
     bool optionsAllowed = true;
@@ -373,8 +473,12 @@ bool Arguments::tryParse(const int argc, const char** const argv) {
                         return false;
                     }
 
-                /* Typo (long option with only one dash) */
+                /* Typo (long option with only one dash). Ignore them if this
+                   is prefixed version because they can actually be values of
+                   some long options. */
                 } else {
+                    if(!_prefix.empty()) continue;
+
                     Error() << "Invalid command-line argument" << argv[i] << std::string("(did you mean -") + argv[i] + "?)";
                     return false;
                 }
@@ -510,7 +614,11 @@ std::string Arguments::help() const {
     }
     for(const Entry& entry: _entries) {
         /* Entry which will not be printed, skip */
-        if(entry.help.empty() && (entry.type == Type::Option && entry.defaultValue.empty()) && entry.environment.empty())
+        if(entry.help.empty() && (entry.type == Type::Option && entry.defaultValue.empty())
+            #ifndef CORRADE_TARGET_WINDOWS_RT
+            && entry.environment.empty()
+            #endif
+        )
             continue;
 
         /* Compute size of current key column. Make it so the key name is
@@ -554,7 +662,11 @@ std::string Arguments::help() const {
     for(const Entry& entry: _entries) {
         /* Skip arguments and options without default value, environment or
            help text (no additional info to show) */
-        if(entry.type == Type::Argument || (entry.defaultValue.empty() && entry.environment.empty() && entry.help.empty()))
+        if(entry.type == Type::Argument || (entry.defaultValue.empty() && entry.help.empty()
+            #ifndef CORRADE_TARGET_WINDOWS_RT
+            && entry.environment.empty()
+            #endif
+        ))
             continue;
 
         /* Key name */
@@ -567,10 +679,12 @@ std::string Arguments::help() const {
         if(!entry.help.empty()) out << entry.help << '\n';
 
         /* Value taken from environment */
+        #ifndef CORRADE_TARGET_WINDOWS_RT
         if(!entry.environment.empty()) {
             if(!entry.help.empty()) out << std::string(keyColumnWidth + 3, ' ');
             out << "(environment: " << entry.environment << ")\n";
         }
+        #endif
 
         /* Default value, put it on new indented line (two spaces from the
            left and one from the right additionaly to key column width), if
@@ -617,15 +731,15 @@ bool Arguments::skippedPrefix(const std::string& key) const {
 }
 
 bool Arguments::verifyKey(const std::string& key) const {
-    static const std::string allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
+    static constexpr const char allowed[] { "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-" };
 
     return key.size() > 1 && key.find_first_not_of(allowed) == std::string::npos;
 }
 
 bool Arguments::verifyKey(char shortKey) const {
-    static const std::string allowedShort = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    static constexpr const char allowedShort[] { "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" };
 
-    return !shortKey || allowedShort.find(shortKey) != std::string::npos;
+    return !shortKey || std::strchr(allowedShort, shortKey) != nullptr;
 }
 
 auto Arguments::find(const std::string& key) -> std::vector<Entry>::iterator {

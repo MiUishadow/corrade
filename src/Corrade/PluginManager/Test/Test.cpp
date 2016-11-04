@@ -56,23 +56,24 @@ struct Test: TestSuite::Tester {
     void unloadNonexistent();
 
     void staticPlugin();
-    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
     void dynamicPlugin();
     #endif
     void staticPluginInitFini();
-    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
     void dynamicPluginInitFini();
     #endif
 
     void deletable();
     void hierarchy();
+    void destructionHierarchy();
     void crossManagerDependencies();
     void unresolvedDependencies();
 
     void reloadPluginDirectory();
 
     void staticProvides();
-    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
     void dynamicProvides();
     void dynamicProvidesDependency();
     #endif
@@ -89,22 +90,23 @@ Test::Test() {
               &Test::unloadNonexistent,
 
               &Test::staticPlugin,
-              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
               &Test::dynamicPlugin,
               #endif
               &Test::staticPluginInitFini,
-              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
               &Test::dynamicPluginInitFini,
               #endif
 
               &Test::deletable,
               &Test::hierarchy,
+              &Test::destructionHierarchy,
               &Test::crossManagerDependencies,
               &Test::unresolvedDependencies,
               &Test::reloadPluginDirectory,
 
               &Test::staticProvides,
-              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+              #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
               &Test::dynamicProvides,
               &Test::dynamicProvidesDependency,
               #endif
@@ -127,12 +129,12 @@ namespace {
 }
 
 void Test::nameList() {
-    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
     {
         PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
 
         CORRADE_COMPARE_AS(manager.pluginList(), (std::vector<std::string>{
-            "Bulldog", "Canary", "Chihuahua", "Dog", "Snail"}), TestSuite::Compare::Container);
+            "Bulldog", "Canary", "Dog", "PitBull", "Snail"}), TestSuite::Compare::Container);
     }
     #endif
 
@@ -144,7 +146,7 @@ void Test::nameList() {
 }
 
 void Test::wrongPluginVersion() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Can't test plugin version of static plugins");
     #else
     std::ostringstream out;
@@ -158,7 +160,7 @@ void Test::wrongPluginVersion() {
 }
 
 void Test::wrongPluginInterface() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Can't test plugin interface of static plugins");
     #else
     std::ostringstream out;
@@ -171,7 +173,7 @@ void Test::wrongPluginInterface() {
 }
 
 void Test::wrongMetadataFile() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Can't test metadata file of static plugins");
     #else
     std::ostringstream out;
@@ -192,7 +194,7 @@ void Test::loadNonexistent() {
     std::ostringstream out;
     Error redirectError{&out};
     CORRADE_COMPARE(manager.load("Nonexistent"), LoadState::NotFound);
-    #if defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_NACL_NEWLIB)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_COMPARE(out.str(), "PluginManager::Manager::load(): plugin Nonexistent was not found\n");
     #else
     CORRADE_COMPARE(out.str(), "PluginManager::Manager::load(): plugin Nonexistent is not static and was not found in " + pluginsDir + "\n");
@@ -223,7 +225,7 @@ void Test::staticPlugin() {
     CORRADE_COMPARE(manager.unload("Canary"), LoadState::Static);
 }
 
-#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
 void Test::dynamicPlugin() {
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
 
@@ -273,7 +275,7 @@ void Test::staticPluginInitFini() {
     CORRADE_COMPARE(out.str(), "Canary finalized\n");
 }
 
-#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
 void Test::dynamicPluginInitFini() {
     std::ostringstream out;
     Debug redirectDebug{&out};
@@ -293,7 +295,7 @@ void Test::dynamicPluginInitFini() {
 #endif
 
 void Test::deletable() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Can't test because static plugins can't be unloaded");
     #else
     PluginManager::Manager<AbstractDeletable> deletableManager(deletablePluginsDir);
@@ -316,21 +318,21 @@ void Test::deletable() {
 }
 
 void Test::hierarchy() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Dependency hierarchy is meaningful only for dynamic plugins");
     #else
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
 
-    CORRADE_COMPARE(manager.load("Chihuahua"), LoadState::Loaded);
+    CORRADE_COMPARE(manager.load("PitBull"), LoadState::Loaded);
     CORRADE_COMPARE(manager.loadState("Dog"), LoadState::Loaded);
-    CORRADE_COMPARE(manager.metadata("Chihuahua")->data().value("description"), "The smallest dog in the world.");
-    CORRADE_COMPARE(manager.metadata("Chihuahua")->depends(),
+    CORRADE_COMPARE(manager.metadata("PitBull")->data().value("description"), "I'M ANGRY!!");
+    CORRADE_COMPARE(manager.metadata("PitBull")->depends(),
         std::vector<std::string>{"Dog"});
     CORRADE_COMPARE(manager.metadata("Dog")->usedBy(),
-        std::vector<std::string>{"Chihuahua"});
+        std::vector<std::string>{"PitBull"});
 
     {
-        std::unique_ptr<AbstractAnimal> animal = manager.instance("Chihuahua");
+        std::unique_ptr<AbstractAnimal> animal = manager.instance("PitBull");
         CORRADE_VERIFY(animal);
         CORRADE_VERIFY(animal->hasTail()); // inherited from dog
         CORRADE_COMPARE(animal->legCount(), 4); // this too
@@ -340,13 +342,33 @@ void Test::hierarchy() {
         std::ostringstream out;
         Error redirectError{&out};
         CORRADE_COMPARE(manager.unload("Dog"), LoadState::Required);
-        CORRADE_COMPARE(out.str(), "PluginManager::Manager::unload(): plugin Dog is required by other plugins: {Chihuahua}\n");
+        CORRADE_COMPARE(out.str(), "PluginManager::Manager::unload(): plugin Dog is required by other plugins: {PitBull}\n");
     }
 
     /* After deleting instance, unload chihuahua plugin, then try again */
-    CORRADE_COMPARE(manager.unload("Chihuahua"), LoadState::NotLoaded);
+    CORRADE_COMPARE(manager.unload("PitBull"), LoadState::NotLoaded);
     CORRADE_COMPARE(manager.unload("Dog"), LoadState::NotLoaded);
     CORRADE_VERIFY(manager.metadata("Dog")->usedBy().empty());
+    #endif
+}
+
+void Test::destructionHierarchy() {
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
+    CORRADE_SKIP("Dependency hierarchy is meaningful only for dynamic plugins");
+    #else
+    /* Dog needs to be ordered first in the map for this test case to work.
+       Basically I'm testing that the unload of plugins happens in the
+       right order and that I'm not using invalid iterators at any point. */
+    CORRADE_VERIFY(std::string{"Dog"} < std::string{"PitBull"});
+
+    {
+        PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
+        CORRADE_COMPARE(manager.load("PitBull"), LoadState::Loaded);
+        CORRADE_COMPARE(manager.loadState("Dog"), LoadState::Loaded);
+    }
+
+    /* It should not crash, assert or fire an exception on destruction */
+    CORRADE_VERIFY(true);
     #endif
 }
 
@@ -354,7 +376,7 @@ void Test::crossManagerDependencies() {
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
     PluginManager::Manager<AbstractFood> foodManager(foodPluginsDir);
 
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Cross-manager dependencies are meaningful only for dynamic plugins");
     #else
     /* Load HotDog */
@@ -393,7 +415,7 @@ void Test::crossManagerDependencies() {
 }
 
 void Test::unresolvedDependencies() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("UsedBy list is irrelevant for static plugins");
     #else
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
@@ -416,7 +438,7 @@ void Test::unresolvedDependencies() {
 }
 
 void Test::reloadPluginDirectory() {
-    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN)
+    #if defined(CORRADE_TARGET_NACL_NEWLIB) || defined(CORRADE_TARGET_EMSCRIPTEN) || defined(CORRADE_TARGET_WINDOWS_RT) || defined(CORRADE_TARGET_IOS) || defined(CORRADE_TARGET_ANDROID)
     CORRADE_SKIP("Plugin directory is irrelevant for static plugins");
     #else
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
@@ -428,11 +450,11 @@ void Test::reloadPluginDirectory() {
     Directory::move(Directory::join(pluginsDir, "Dog.conf"),
                     Directory::join(pluginsDir, "LostDog.conf"));
 
-    /* Rename Chihuahua */
-    Directory::move(Directory::join(pluginsDir, std::string("Chihuahua") + PLUGIN_FILENAME_SUFFIX),
-                    Directory::join(pluginsDir, std::string("LostChihuahua") + PLUGIN_FILENAME_SUFFIX));
-    Directory::move(Directory::join(pluginsDir, "Chihuahua.conf"),
-                    Directory::join(pluginsDir, "LostChihuahua.conf"));
+    /* Rename PitBull */
+    Directory::move(Directory::join(pluginsDir, std::string("PitBull") + PLUGIN_FILENAME_SUFFIX),
+                    Directory::join(pluginsDir, std::string("LostPitBull") + PLUGIN_FILENAME_SUFFIX));
+    Directory::move(Directory::join(pluginsDir, "PitBull.conf"),
+                    Directory::join(pluginsDir, "LostPitBull.conf"));
 
     /* Reload plugin dir and check new name list */
     manager.reloadPluginDirectory();
@@ -451,18 +473,18 @@ void Test::reloadPluginDirectory() {
     Directory::move(Directory::join(pluginsDir, "LostDog.conf"),
                     Directory::join(pluginsDir, "Dog.conf"));
 
-    Directory::move(Directory::join(pluginsDir, std::string("LostChihuahua") + PLUGIN_FILENAME_SUFFIX),
-                    Directory::join(pluginsDir, std::string("Chihuahua") + PLUGIN_FILENAME_SUFFIX));
-    Directory::move(Directory::join(pluginsDir, "LostChihuahua.conf"),
-                    Directory::join(pluginsDir, "Chihuahua.conf"));
+    Directory::move(Directory::join(pluginsDir, std::string("LostPitBull") + PLUGIN_FILENAME_SUFFIX),
+                    Directory::join(pluginsDir, std::string("PitBull") + PLUGIN_FILENAME_SUFFIX));
+    Directory::move(Directory::join(pluginsDir, "LostPitBull.conf"),
+                    Directory::join(pluginsDir, "PitBull.conf"));
 
     manager.reloadPluginDirectory();
 
     /* And now we can safely compare */
     CORRADE_COMPARE_AS(actual1, (std::vector<std::string>{
-        "Bulldog", "Canary", "Dog", "LostChihuahua", "LostDog", "Snail"}), TestSuite::Compare::Container);
+        "Bulldog", "Canary", "Dog", "LostDog", "LostPitBull", "Snail"}), TestSuite::Compare::Container);
     CORRADE_COMPARE_AS(actual2, (std::vector<std::string>{
-        "Bulldog", "Canary", "LostChihuahua", "LostDog", "Snail"}), TestSuite::Compare::Container);
+        "Bulldog", "Canary", "LostDog", "LostPitBull", "Snail"}), TestSuite::Compare::Container);
     #endif
 }
 
@@ -479,7 +501,7 @@ void Test::staticProvides() {
     CORRADE_COMPARE(animal->metadata()->name(), "Canary");
 }
 
-#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN)
+#if !defined(CORRADE_TARGET_NACL_NEWLIB) && !defined(CORRADE_TARGET_EMSCRIPTEN) && !defined(CORRADE_TARGET_WINDOWS_RT) && !defined(CORRADE_TARGET_IOS) && !defined(CORRADE_TARGET_ANDROID)
 void Test::dynamicProvides() {
     PluginManager::Manager<AbstractAnimal> manager(pluginsDir);
 

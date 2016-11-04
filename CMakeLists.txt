@@ -39,6 +39,11 @@ include(CMakeDependentOption)
 option(GCC47_COMPATIBILITY "Enable compatibility mode for GCC 4.7 (might disable some features)" OFF)
 option(MSVC2015_COMPATIBILITY "Enable compatibility mode for MSVC 2015 (might disable some features)" OFF)
 
+option(WITH_INTERCONNECT "Build Interconnect library" ON)
+option(WITH_PLUGINMANAGER "Build PluginManager library" ON)
+option(WITH_TESTSUITE "Build TestSuite library" ON)
+cmake_dependent_option(WITH_UTILITY "Build Utility library" ON "NOT WITH_INTERCONNECT;NOT WITH_PLUGINMANAGER;NOT WITH_TESTSUITE" ON)
+
 option(BUILD_DEPRECATED "Include deprecated API in the build" ON)
 if(BUILD_DEPRECATED)
     set(CORRADE_BUILD_DEPRECATED 1)
@@ -49,6 +54,9 @@ cmake_dependent_option(BUILD_STATIC_PIC "Build static libraries with position-in
 option(BUILD_TESTS "Build unit tests" OFF)
 
 if(BUILD_TESTS)
+    if(CORRADE_TARGET_IOS)
+        set(CORRADE_TESTSUITE_BUNDLE_IDENTIFIER_PREFIX "cz.mosra.corrade")
+    endif()
     enable_testing()
 endif()
 
@@ -65,18 +73,24 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL Emscripten)
     set(CORRADE_TARGET_EMSCRIPTEN 1)
     # It's meaningless to use dynamic libraries with Emscripten
     set(BUILD_STATIC ON)
-elseif(CMAKE_SYSTEM_NAME STREQUAL Android)
-    set(CORRADE_TARGET_ANDROID 1)
-    # It's too inconvenient to manually load all shared libs using JNI
-    set(BUILD_STATIC ON)
 elseif(UNIX)
     # Both APPLE and UNIX are defined on OSX
     if(APPLE)
         set(CORRADE_TARGET_APPLE 1)
 
-        if(CMAKE_OSX_SYSROOT MATCHES "/(iPhoneOS|iPhoneSimulator)[0-9.]*\\.sdk")
+        if(CMAKE_OSX_SYSROOT MATCHES "/iPhoneOS[0-9.]*\\.sdk")
             set(CORRADE_TARGET_IOS 1)
+        elseif(CMAKE_OSX_SYSROOT MATCHES "/iPhoneSimulator[0-9.]*\\.sdk")
+            set(CORRADE_TARGET_IOS 1)
+            set(CORRADE_TARGET_IOS_SIMULATOR 1)
         endif()
+    endif()
+
+    # UNIX is also defined on Android
+    if(CMAKE_SYSTEM_NAME STREQUAL Android)
+        set(CORRADE_TARGET_ANDROID 1)
+        # It's too inconvenient to manually load all shared libs using JNI
+        set(BUILD_STATIC ON)
     endif()
 
     # NaCl and Emscripten are Unix too, this selects only the other ones
@@ -91,7 +105,11 @@ endif()
 
 # Platform-specific options
 if(CORRADE_TARGET_WINDOWS)
-    option(UTILITY_USE_ANSI_COLORS "Use ANSI escape sequences for colored Debug output on Windows" OFF)
+    if(CORRADE_TARGET_WINDOWS_RT)
+        set(UTILITY_USE_ANSI_COLORS 1)
+    else()
+        option(UTILITY_USE_ANSI_COLORS "Use ANSI escape sequences for colored Debug output on Windows" OFF)
+    endif()
     if(UTILITY_USE_ANSI_COLORS)
         set(CORRADE_UTILITY_USE_ANSI_COLORS 1)
     endif()
@@ -120,11 +138,14 @@ endif()
 if(CORRADE_TESTSUITE_TARGET_XCTEST)
     set(CORRADE_TESTSUITE_XCTEST_RUNNER ${PROJECT_SOURCE_DIR}/src/Corrade/TestSuite/XCTestRunner.mm.in)
 endif()
+if(CORRADE_TARGET_ANDROID)
+    set(CORRADE_TESTSUITE_ADB_RUNNER ${PROJECT_SOURCE_DIR}/src/Corrade/TestSuite/AdbRunner.sh)
+endif()
 
 # Detect and auto-enable compiler compatibility
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.7.0")
-        message(FATAL_ERROR "Compatibility branch of Corrade is needed for use with GCC < 4.7. See the documentation for more information.")
+        message(FATAL_ERROR "Corrade cannot be used with GCC < 4.7. Sorry.")
     elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8.1")
         if(NOT GCC47_COMPATIBILITY)
             set(GCC47_COMPATIBILITY ON)
@@ -133,7 +154,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif()
 elseif(MSVC)
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19.0")
-        message(FATAL_ERROR "Compatibility branch of Corrade is needed for use with MSVC < 2015. See the documentation for more information.")
+        message(FATAL_ERROR "Corrade cannot be used with MSVC < 2015. Sorry.")
     elseif(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "20.0")
         if(NOT MSVC2015_COMPATIBILITY)
             set(MSVC2015_COMPATIBILITY ON)
